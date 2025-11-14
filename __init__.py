@@ -2,7 +2,7 @@
 
 # pyright: reportMissingImports=false
 import bpy
-from . import constants, exceptions, validation, properties, operators, baker, bake_utils, cloth_rigger, cleanup_operators, rotation_fix_settings, material_export, hair_particle_converter
+from . import constants, exceptions, validation, properties, operators, baker, bake_utils, alpha_combiner, cloth_rigger, cleanup_operators, rotation_fix_settings, material_export, hair_particle_converter
 from .ui import panels_3d_view, panel_baking, panel_uv_editor
 
 bl_info = {
@@ -30,6 +30,7 @@ if "bpy" in locals():
     importlib.reload(panel_uv_editor)
     importlib.reload(baker)
     importlib.reload(bake_utils)
+    importlib.reload(alpha_combiner)
     importlib.reload(cloth_rigger)
     importlib.reload(cleanup_operators)
     importlib.reload(rotation_fix_settings)

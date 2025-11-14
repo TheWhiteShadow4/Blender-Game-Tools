@@ -20,6 +20,12 @@ VERSION_TEXT = "Version"
 INVALID_PROJECT_PATH_TEXT = "Invalid Project Path"
 EXPORT_PATH_TEXT = "Export Path"
 
+# Subpanel labels
+EXPORT_PANEL_LABEL = "Export & Fixes"
+MERGE_PANEL_LABEL = "Merge"
+SETTINGS_PANEL_LABEL = "Project Settings"
+BAKING_SHORTCUT_LABEL = "Baking"
+
 # Cleanup Panel
 CLEANUP_PANEL_LABEL = "Object Cleanup"
 NO_MESH_SELECTED_TEXT = "No mesh object selected"
@@ -42,7 +48,7 @@ ADD_RIG_TO_SURFACE_TEXT = "Add Rig to Surface"
 # ===== PANEL CLASSES =====
 
 class UNITY_PT_main_panel(bpy.types.Panel):
-    """Creates a Panel in the 3D Viewport"""
+    """Main dashboard panel in the 3D Viewport"""
     bl_label = MAIN_PANEL_LABEL
     bl_idname = "UNITY_PT_main_panel"
     bl_space_type = 'VIEW_3D'
@@ -51,54 +57,29 @@ class UNITY_PT_main_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
 
-        # Reload button
-        row = layout.row()
+        row = layout.row(align=True)
         row.operator("script.reload", text=RELOAD_ADDON_TEXT, icon='FILE_REFRESH')
 
-        scene = context.scene
-        unity_props = scene.unity_tool_properties
-
-        # Section for Operators
-        box = layout.box()
-        row = box.row()
-        row.operator("unity.apply_rotation_fix", text=FIX_ROTATION_TEXT)
-        box = layout.box()
-        row = box.row()
-        row.prop(unity_props, "apply_gamma_correction")
-        row = box.row()
-        row.operator("unity.quick_export", text=QUICK_EXPORT_TEXT)
-
-        # Merge Objects
-        box = layout.box()
-        box.label(text=MERGE_OBJECTS_SECTION)
-        row = box.row()
-        row.prop(unity_props, "isolate_mono_animation_objects")
-        row = box.row()
-        row.operator("unity.merge_objects", text=MERGE_COLLECTION_TEXT)
+        unity_props = context.scene.unity_tool_properties
 
         box = layout.box()
-        box.label(text=BAKING_SECTION)
-        row = box.row()
-        row.operator("unity.bake_batch", text=BAKE_ACTIVE_PRESETS_TEXT)
-
-        # Section for Settings
-        box = layout.box()
-        box.label(text=GAME_ENGINE_SETTINGS_SECTION)
-        row = box.row()
-        row.prop(unity_props, "engine_project_path", text=PROJECT_TEXT)
-
+        col = box.column(align=True)
+        col.prop(unity_props, "engine_project_path", text=PROJECT_TEXT)
         if unity_props.engine_version:
-            row = box.row()
-            row.label(text=f"{VERSION_TEXT}: {unity_props.engine_version}", icon='INFO')
-
+            col.label(text=f"{VERSION_TEXT}: {unity_props.engine_version}", icon='INFO')
         if unity_props.engine_project_path and not unity_props.is_path_valid:
-            row = box.row()
-            row.alert = True
-            row.label(text=INVALID_PROJECT_PATH_TEXT, icon='ERROR')
+            warn = box.row()
+            warn.alert = True
+            warn.label(text=INVALID_PROJECT_PATH_TEXT, icon='ERROR')
 
-        row = box.row()
-        row.prop(unity_props, "export_path", text=EXPORT_PATH_TEXT)
+        # Quick Export directly under project path snapshot
+        if unity_props.engine_project_path:
+            row = box.row()
+            row.enabled = unity_props.is_path_valid
+            row.operator("unity.quick_export", text=QUICK_EXPORT_TEXT, icon='EXPORT')
 
 
 class UNITY_PT_cleanup_panel(bpy.types.Panel):
@@ -109,16 +90,17 @@ class UNITY_PT_cleanup_panel(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = MAIN_PANEL_CATEGORY
     bl_parent_id = "UNITY_PT_main_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return bool(obj and obj.type == 'MESH')
 
     def draw(self, context):
         layout = self.layout
-        
-        # Check if an object is selected
-        active_obj = context.active_object
-        if not active_obj or active_obj.type != 'MESH':
-            box = layout.box()
-            box.label(text=NO_MESH_SELECTED_TEXT, icon='ERROR')
-            return
+        layout.use_property_split = True
+        layout.use_property_decorate = False
         
         # Individual cleanup operations
         box = layout.box()
@@ -162,9 +144,16 @@ class UNITY_PT_animation_panel(bpy.types.Panel):
     bl_region_type = 'UI'
     bl_category = MAIN_PANEL_CATEGORY
     bl_parent_id = "UNITY_PT_main_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
         cloth_props = context.scene.unity_cloth_rig_properties
 
         box = layout.box()
@@ -173,8 +162,10 @@ class UNITY_PT_animation_panel(bpy.types.Panel):
         #row = box.row()
         #row.prop(cloth_props, "nth")
         if cloth_props.mode == 'FACES':
-            row = box.row()
-            row.prop(cloth_props, "copy_rotation")
+            sub = box.column(align=True)
+            sub.use_property_split = False
+            sub.use_property_decorate = False
+            sub.prop(cloth_props, "copy_rotation")
         
         # Vertex Group selection
         row = box.row()
@@ -189,17 +180,116 @@ class UNITY_PT_animation_panel(bpy.types.Panel):
         row.prop(cloth_props, "target_armature", text=TARGET_ARMATURE_TEXT)
         
         # Clean Weights option (only show if target armature is specified)
-        row = box.row()
-        row.prop(cloth_props, "clean_weights")
+        sub = box.column(align=True)
+        sub.use_property_split = False
+        sub.use_property_decorate = False
+        sub.prop(cloth_props, "clean_weights")
         
         row = box.row()
         row.operator("unity.rig_cloth", text=ADD_RIG_TO_SURFACE_TEXT)
+
+
+class UNITY_PT_export_panel(bpy.types.Panel):
+    bl_label = EXPORT_PANEL_LABEL
+    bl_idname = "UNITY_PT_export_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = MAIN_PANEL_CATEGORY
+    bl_parent_id = "UNITY_PT_main_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        props = context.scene.unity_tool_properties
+
+        col = layout.column(align=True)
+        col.operator("unity.apply_rotation_fix", text=FIX_ROTATION_TEXT)
+        # Checkbox full-width to avoid truncation
+        sub = layout.column(align=True)
+        sub.use_property_split = False
+        sub.use_property_decorate = False
+        sub.prop(props, "apply_gamma_correction")
+
+
+class UNITY_PT_merge_panel(bpy.types.Panel):
+    bl_label = MERGE_PANEL_LABEL
+    bl_idname = "UNITY_PT_merge_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = MAIN_PANEL_CATEGORY
+    bl_parent_id = "UNITY_PT_main_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.unity_tool_properties
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        box = layout.box()
+        box.label(text=MERGE_OBJECTS_SECTION)
+        # Checkbox full-width to avoid truncation
+        sub = box.column(align=True)
+        sub.use_property_split = False
+        sub.use_property_decorate = False
+        sub.prop(props, "isolate_mono_animation_objects")
+        row = box.row()
+        row.operator("unity.merge_objects", text=MERGE_COLLECTION_TEXT)
+
+
+class UNITY_PT_settings_panel(bpy.types.Panel):
+    bl_label = SETTINGS_PANEL_LABEL
+    bl_idname = "UNITY_PT_settings_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = MAIN_PANEL_CATEGORY
+    bl_parent_id = "UNITY_PT_main_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        props = context.scene.unity_tool_properties
+
+        col = layout.column(align=True)
+        col.prop(props, "engine_project_path", text=PROJECT_TEXT)
+        if props.engine_version:
+            col.label(text=f"{VERSION_TEXT}: {props.engine_version}", icon='INFO')
+        if props.engine_project_path and not props.is_path_valid:
+            row = layout.row()
+            row.alert = True
+            row.label(text=INVALID_PROJECT_PATH_TEXT, icon='ERROR')
+        col.prop(props, "export_path", text=EXPORT_PATH_TEXT)
+
+
+class UNITY_PT_baking_shortcut_panel(bpy.types.Panel):
+    bl_label = BAKING_SHORTCUT_LABEL
+    bl_idname = "UNITY_PT_baking_shortcut_panel"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = MAIN_PANEL_CATEGORY
+    bl_parent_id = "UNITY_PT_main_panel"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+        row = layout.row()
+        row.operator("unity.bake_batch", text=BAKE_ACTIVE_PRESETS_TEXT)
 
 
 # ===== REGISTRATION =====
 
 def register():
     bpy.utils.register_class(UNITY_PT_main_panel)
+    bpy.utils.register_class(UNITY_PT_export_panel)
+    bpy.utils.register_class(UNITY_PT_merge_panel)
+    bpy.utils.register_class(UNITY_PT_settings_panel)
+    bpy.utils.register_class(UNITY_PT_baking_shortcut_panel)
     bpy.utils.register_class(UNITY_PT_cleanup_panel)
     bpy.utils.register_class(UNITY_PT_animation_panel)
 
@@ -207,4 +297,8 @@ def register():
 def unregister():
     bpy.utils.unregister_class(UNITY_PT_animation_panel)
     bpy.utils.unregister_class(UNITY_PT_cleanup_panel)
-    bpy.utils.unregister_class(UNITY_PT_main_panel) 
+    bpy.utils.unregister_class(UNITY_PT_baking_shortcut_panel)
+    bpy.utils.unregister_class(UNITY_PT_settings_panel)
+    bpy.utils.unregister_class(UNITY_PT_merge_panel)
+    bpy.utils.unregister_class(UNITY_PT_export_panel)
+    bpy.utils.unregister_class(UNITY_PT_main_panel)
