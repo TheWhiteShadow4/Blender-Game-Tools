@@ -51,9 +51,6 @@ class Baker():
 			
 			# Alpha-Kanal-Kombination nach ALLEN Passes durchführen
 			# (Alpha-Texturen können in späteren Passes gebaked werden)
-			print("=" * 60)
-			print("ALPHA CHANNEL COMBINATION")
-			print("=" * 60)
 			alpha_results = self._combine_alpha_channels()
 			
 			# Zusammenfassung der Ergebnisse
@@ -61,13 +58,15 @@ class Baker():
 			fail_count = len(alpha_results) - success_count
 			
 			if alpha_results:
-				print(f"Summary: {success_count} successful, {fail_count} failed")
-				for success, message in alpha_results:
-					if not success:
-						print(f"  ERROR: {message}")
+				if fail_count > 0:
+					print(f"Summary: {success_count} successful, {fail_count} failed")
+					for success, message in alpha_results:
+						if not success:
+							print(f"  ERROR: {message}")
+				elif success_count > 0:
+					print(f"Summary: {success_count} alpha channel(s) combined successfully")
 			else:
-				print("No alpha combinations attempted (no matching alpha textures found)")
-			print("=" * 60)
+				print("No alpha channels to combine")
 
 		except Exception as e:
 			print(traceback.format_exc())
@@ -147,8 +146,6 @@ class Baker():
 		"""
 		results = []
 		
-		print(f"Starting alpha combination for {len(self.bake_data.passes)} bake pass(es)...")
-		
 		# Sammle alle Settings mit ihren Images
 		# Key: (object, material, socket_name) -> (setting, image)
 		settings_map = {}
@@ -170,19 +167,17 @@ class Baker():
 				settings_map[key] = (setting, image, bake_pass)
 		
 		# Für jedes Setting: Prüfe ob es ein "_Alpha" Pendant gibt
-		processed = set()
-		main_texture_count = 0
+		# Deduplizierung basierend auf Image-Objekten, nicht Settings
+		processed_images = set()
 		
 		for (obj, mat, socket_name), (setting, main_image, bake_pass) in settings_map.items():
 			# Überspringe bereits "_Alpha" Sockets
 			if socket_name.endswith("_Alpha"):
 				continue
 			
-			# Deduplizierung
-			key = (obj, mat, socket_name)
-			if key in processed:
+			# Prüfe ob dieses Image bereits kombiniert wurde
+			if main_image in processed_images:
 				continue
-			processed.add(key)
 			
 			# Suche nach entsprechendem "_Alpha" Socket
 			alpha_socket_name = f"{socket_name}_Alpha"
@@ -194,19 +189,14 @@ class Baker():
 			
 			alpha_setting, alpha_image, alpha_bake_pass = settings_map[alpha_key]
 			
-			main_texture_count += 1
-			main_texture_name = f"{obj.name}_{socket_name}"
-			print(f"Processing main texture #{main_texture_count}: '{main_texture_name}'")
-			print(f"  -> Main image: '{main_image.name}' ({main_image.size[0]}x{main_image.size[1]})")
-			print(f"  -> Alpha image: '{alpha_image.name}' ({alpha_image.size[0]}x{alpha_image.size[1]})")
-			
 			# Kombiniere Alpha-Kanal
 			success, message = alpha_combiner.combine_alpha_channel(main_image, alpha_image, cleanup_alpha=False)
 			results.append((success, message))
-			if not success:
-				print(f"  -> FAILED: {message}")
+			if success:
+				print(message)
+				# Markiere dieses Image als bereits kombiniert
+				processed_images.add(main_image)
 		
-		print(f"Alpha combination complete: {len(results)} combination(s) attempted")
 		return results
 
 	def _collect_materials_for_pass(self, bake_pass, diffuse_pipeline):

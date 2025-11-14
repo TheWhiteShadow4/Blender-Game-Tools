@@ -59,12 +59,9 @@ def combine_alpha_channel(main_image, alpha_image, cleanup_alpha=False):
 	Returns:
 		(bool, str): (success, message)
 	"""
-	print(f"  Combining alpha: Source='{alpha_image.name}' ({alpha_image.size[0]}x{alpha_image.size[1]}) -> Target='{main_image.name}' ({main_image.size[0]}x{main_image.size[1]})")
-	
 	# Validierung
 	is_valid, error_msg = validate_alpha_image(main_image, alpha_image)
 	if not is_valid:
-		print(f"  -> Validation failed: {error_msg}")
 		return False, error_msg
 	
 	try:
@@ -97,18 +94,14 @@ def combine_alpha_channel(main_image, alpha_image, cleanup_alpha=False):
 		# Image als geändert markieren
 		main_image.update()
 		
-		print(f"  -> Successfully copied alpha channel from '{alpha_image.name}' to '{main_image.name}'")
-		
 		# Optional: Alpha-Textur löschen
 		if cleanup_alpha:
 			bpy.data.images.remove(alpha_image)
-			print(f"  -> Removed alpha image '{alpha_image.name}' after combining.")
 		
-		return True, f"Successfully combined alpha channel from '{alpha_image.name}' into '{main_image.name}'"
+		return True, f"Combined alpha channel: '{alpha_image.name}' -> '{main_image.name}'"
 		
 	except Exception as e:
 		import traceback
-		print(f"  -> ERROR during alpha combination: {str(e)}")
 		print(traceback.format_exc())
 		return False, f"Error combining alpha channels: {str(e)}"
 
