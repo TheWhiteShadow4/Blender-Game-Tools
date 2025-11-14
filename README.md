@@ -22,7 +22,7 @@ Collection-based merging with automatic modifier application, hair particle conv
 
 ## Installation
 
-1. Create a ZIP from the `unity` folder contents
+1. Download the Zip
 2. In Blender: `Edit` > `Preferences` > `Add-ons` > `Install...`
 3. Select the ZIP and enable "Unity Tools"
 4. The panel appears in the 3D Viewport under `N` > `Game Tools`
@@ -31,7 +31,7 @@ Collection-based merging with automatic modifier application, hair particle conv
 
 ## Modules in Detail
 
-![Game Tools UI](UI-Unity-Tools.jpg)
+![Game Tools UI](UI-Game-Tools.jpg)
 
 ### Material Baking
 
@@ -43,7 +43,7 @@ Collection-based merging with automatic modifier application, hair particle conv
 
 #### Workflow
 
-1. **Create Preset:** `+` button → New preset is created
+1. **Create Preset:** Go to Properties Editor -> Material. Press `+` button in Baking Presets
 2. **Select Target Input:** Which shader socket to bake (e.g. "Metallic")
 3. **Bake Mode:**
    - **New:** New texture with configurable resolution and color space
@@ -151,7 +151,7 @@ You have a cloth simulation or physics-based surface animation and want to expor
   - Only visible particle systems are processed
 - **Modifiers:** Visible modifiers are applied, invisible ones discarded (except Armature)
 - **Conversion:** Curves, Surfaces, Fonts, Meta → automatically converted to mesh
-- **Mono Animation Objects:** Optional isolated vertex groups with 100% weight (see settings)
+- **Mono Animation Objects:** Optional convert objects with bone parent to vertex groups animation
 - **Join:** All meshes are combined into one
 
 ---

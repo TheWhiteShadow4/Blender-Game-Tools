@@ -6,11 +6,11 @@ from . import constants, exceptions, validation, properties, operators, baker, b
 from .ui import panels_3d_view, panel_baking, panel_uv_editor
 
 bl_info = {
-	"name": "Unity Tools",
+	"name": "Game Tools",
 	"author": "TheWhiteShadow",
 	"version": (1, 3),
 	"blender": (4, 4, 0),
-	"description": "Unity Helper Tools",
+	"description": "Game Helper Tools",
 	"warning": "",
 	"wiki_url": "",
 	"category": "System"
