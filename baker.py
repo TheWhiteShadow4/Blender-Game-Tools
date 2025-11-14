@@ -18,6 +18,9 @@ class Baker():
 		self.material_metadata = {}
 		# Index des Passes, der Debugged werden soll. Der Prozess wird nach diesem Pass beendet und die Nodes werden nicht aufgeräumt.
 		self.debug_pass_idx = -1
+		# Liste aller temporären Nodes, die z.B. für Alpha-Merge-Passes erstellt wurden
+		# Wird verwendet, um diese Nodes nach Abschluss des Baking zu entfernen
+		self.temporary_nodes = []  # Liste von (node, material) Tupeln
 	
 	def get_or_create_dummy_image(self):
 		if not self.dummy_image:
@@ -49,8 +52,6 @@ class Baker():
 				print(f"Bake Pass {bake_pass.index}")
 				self.bake_pass(bake_pass)
 			
-			# Alpha-Kanal-Kombination nach ALLEN Passes durchführen
-			# (Alpha-Texturen können in späteren Passes gebaked werden)
 			alpha_results = self._combine_alpha_channels()
 			
 			# Zusammenfassung der Ergebnisse
@@ -137,65 +138,47 @@ class Baker():
 
 	def _combine_alpha_channels(self):
 		"""
-		Kombiniert Alpha-Kanäle für alle Haupttexturen.
-		Findet für jedes Setting mit einem Socket (z.B. "BaseMap") das entsprechende
-		"_Alpha" Setting (z.B. "BaseMap_Alpha") und kombiniert die Images.
+		Führt die geplanten Alpha-Merge-Vorgänge aus.
+		Aktualisiert auch die Node-Verbindungen, sodass Alpha-Sockets auf die kombinierte Haupttextur zeigen.
 		
 		Returns:
 			list: Liste von (success, message) Tupeln für jede Kombination
 		"""
 		results = []
 		
-		# Sammle alle Settings mit ihren Images
-		# Key: (object, material, socket_name) -> (setting, image)
-		settings_map = {}
-		
-		for bake_pass in self.bake_data.passes:
-			for setting in bake_pass.settings:
-				if setting.is_dummy() or not setting.input_socket:
-					continue
-				
-				# Finde das tatsächliche Image (kann in setting.image oder cached_images sein)
-				image = setting.image
-				if not image and setting.input_socket.name in bake_pass.cached_images:
-					image = bake_pass.cached_images[setting.input_socket.name]
-				
-				if not image:
-					continue
-				
-				key = (bake_pass.object, setting.material, setting.input_socket.name)
-				settings_map[key] = (setting, image, bake_pass)
-		
-		# Für jedes Setting: Prüfe ob es ein "_Alpha" Pendant gibt
-		# Deduplizierung basierend auf Image-Objekten, nicht Settings
+		# Führe geplante Merges aus
 		processed_images = set()
 		
-		for (obj, mat, socket_name), (setting, main_image, bake_pass) in settings_map.items():
-			# Überspringe bereits "_Alpha" Sockets
-			if socket_name.endswith("_Alpha"):
+		for merge_plan in self.bake_data.alpha_merge_plans:
+			# <Hole die Images nach dem Baking aus den Settings. Wenn die nicht da sind, ist beim Baking etwas schief gelaufen.
+			main_image = merge_plan.main_setting.image
+			if not main_image:
+				raise ValueError(f"Main image not found for {merge_plan.main_setting.material.name} {merge_plan.main_setting.input_socket.name}")
+			
+			alpha_image = merge_plan.alpha_setting.image
+			if not alpha_image:
 				continue
 			
-			# Prüfe ob dieses Image bereits kombiniert wurde
-			if main_image in processed_images:
-				continue
-			
-			# Suche nach entsprechendem "_Alpha" Socket
-			alpha_socket_name = f"{socket_name}_Alpha"
-			alpha_key = (obj, mat, alpha_socket_name)
-			
-			if alpha_key not in settings_map:
-				# Kein "_Alpha" Socket gefunden - das ist OK
-				continue
-			
-			alpha_setting, alpha_image, alpha_bake_pass = settings_map[alpha_key]
-			
-			# Kombiniere Alpha-Kanal
-			success, message = alpha_combiner.combine_alpha_channel(main_image, alpha_image, cleanup_alpha=False)
-			results.append((success, message))
-			if success:
-				print(message)
-				# Markiere dieses Image als bereits kombiniert
+			if main_image not in processed_images:
 				processed_images.add(main_image)
+				# Wir können an der Stelle die Textur noch nicht löschen, da wir sonst den alpha_image_proxy nicht mehr finden können.
+				success, message = alpha_combiner.combine_alpha_channel(main_image, alpha_image, cleanup_alpha=False)
+				results.append((success, message))
+				if success:
+					print(message)
+			
+			# Finde den Socket im Interface Node
+			mat = merge_plan.main_setting.material
+			interface_node = get_interface_node(mat)
+			alpha_socket_name = merge_plan.alpha_setting.input_socket.name
+			alpha_socket = interface_node.inputs.get(alpha_socket_name)
+
+			# Aktualisiere Node-Verbindungen: Alpha-Socket soll auf Haupttextur zeigen
+			metadata = self.material_metadata[mat]
+			alpha_image_proxy = metadata.image_proxies[merge_plan.alpha_setting.image]
+			alpha_image_proxy.remove()
+			main_image_proxy = metadata.image_proxies[merge_plan.main_setting.image]
+			main_image_proxy.connect_alpha_to(alpha_socket)
 		
 		return results
 
@@ -219,6 +202,7 @@ class Baker():
 			v_offset = (len(self.bake_data.passes) / 2 - bake_pass.index) * _NODE_OFFSET_VERTICAL
 
 			image_node = self.material_metadata[mat].get_image_proxy(setting.input_socket, image, v_offset)
+
 			bake_material = BakeMaterial(mat, setting.input_socket, setting.uv_map_name, image_node, setting.channels)
 
 			print({'INFO'}, f"Adding baking material {mat.name}.")

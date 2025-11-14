@@ -3,17 +3,72 @@
 import bpy
 from . import constants
 
+class AlphaMergePlan():
+	"""
+	Speichert einen geplanten Alpha-Merge-Vorgang.
+	Wird bereits bei der BakeData-Erstellung identifiziert.
+	"""
+	def __init__(self, main_setting, alpha_setting):
+		# Wir brauchen nur die Settings. Das Image wird dort nach dem Baking gesetzt.
+		self.main_setting = main_setting
+		self.alpha_setting = alpha_setting
+
 class BakeData():
 	def __init__(self):
 		self.objects = []
 		self.passes: list[BakePass] = []
 		# Liste an Dummy Bildern, die hinterher wieder gelöscht werden.
 		self.dummy_image = None
+		# Geplante Alpha-Merge-Vorgänge
+		self.alpha_merge_plans: list[AlphaMergePlan] = []
 
 	def get_dummy_image(self):
 		if not self.dummy_image:
 			self.dummy_image = bpy.data.images.new(name=constants.DUMMY_IMAGE_NAME, width=1, height=1)
 		return self.dummy_image
+
+	def plan_alpha_merges(self):
+		"""
+		Identifiziert geplante Alpha-Merge-Vorgänge basierend auf den Settings.
+		Wird nach der Erstellung aller Passes aufgerufen.
+		"""
+		self.alpha_merge_plans.clear()
+		
+		# Sammle alle Settings mit ihren Keys
+		# Key: (material, socket_name) -> setting
+		settings_map = {}
+		
+		for bake_pass in self.passes:
+			for setting in bake_pass.settings:
+				if setting.is_dummy() or not setting.input_socket:
+					continue
+				
+				key = (setting.material, setting.input_socket.name)
+				settings_map[key] = setting
+		
+		# Für jedes Setting: Prüfe ob es ein "_Alpha" Pendant gibt
+		processed = set()
+		
+		for (mat, socket_name), main_setting in settings_map.items():
+			# Überspringe bereits "_Alpha" Sockets
+			if socket_name.endswith("_Alpha"):
+				continue
+			
+			# Deduplizierung
+			key = (mat, socket_name)
+			if key in processed:
+				continue
+			processed.add(key)
+			
+			# Suche nach entsprechendem "_Alpha" Socket
+			alpha_socket_name = f"{socket_name}_Alpha"
+			alpha_key = (mat, alpha_socket_name)
+			
+			if alpha_key in settings_map:
+				alpha_setting = settings_map[alpha_key]
+				# Erstelle Merge-Plan
+				merge_plan = AlphaMergePlan(main_setting, alpha_setting)
+				self.alpha_merge_plans.append(merge_plan)
 
 	def clear_images(self):
 		images_to_clear = set()
@@ -160,7 +215,7 @@ class ImageMeta():
 		self.color_space = color_space
 
 	def is_new(self):
-		return self.bake_mode == 'NEW'
+		return self.bake_mode == 'NEW' or self.bake_mode == 'TEMPORARY'
 
 	def create(self, name):
 		image = bpy.data.images.new(
@@ -186,6 +241,8 @@ class ImageNodeProxy():
 		self.location = self.image_node.location if self.image_node else 0
 		self.was_created = was_created
 		self.uv_node = None
+		# Wrapper-Funktion zum Erstellen von Nodes (wird vom Baker gesetzt, Fallback verwendet direkt nodes.new)
+		self.create_node = lambda material, node_type: material.node_tree.nodes.new(node_type)
 
 	def connect_to(self, socket, channels):
 		if is_single_channel_socket(socket):
@@ -199,7 +256,7 @@ class ImageNodeProxy():
 				raise ValueError(f"Invalid channel '{channel_key}' specified for material '{self.material.name}'. Must be one of {list(CHANNEL_MAP.keys())}.")
 
 			if not self.separate_node:
-				self.separate_node = self.material.node_tree.nodes.new('ShaderNodeSeparateColor')
+				self.separate_node = self.create_node(self.material,'ShaderNodeSeparateColor')
 				self.separate_node.location = self.image_node.location
 				self.material.node_tree.links.new(self.image_node.outputs['Color'], self.separate_node.inputs['Color'])
 
@@ -215,7 +272,7 @@ class ImageNodeProxy():
 
 	def add_uv(self, uv_map_name):
 		if not self.uv_node:
-			self.uv_node = self.material.node_tree.nodes.new('ShaderNodeUVMap')
+			self.uv_node = self.create_node(self.material, 'ShaderNodeUVMap')
 			self.uv_node.uv_map = uv_map_name
 			self.uv_node.location = self.image_node.location
 			self.uv_node.location.x -= 200

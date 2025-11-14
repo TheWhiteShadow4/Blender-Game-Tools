@@ -56,10 +56,14 @@ Collection-based merging with automatic modifier application, hair particle conv
 
 - **Multi-Pass Baking:** Multiple presets per object, different settings per material
 - **Channel Control:** Assign RGB channels individually (e.g. Metallic→R, Roughness→G, AO→B)
+- **Alpha Channel Merging\*:** `<Input>_Alpha` inputs are automatically copied to the `<Input>`'s A channel if possible
 - **Margin Override:** Different bleed values per material
 - **Color Space Validation:** Warns about incorrect color space (sRGB vs. Non-Color)
 - **Batch Processing:** All selected objects with one click
 - **Smart Passes:** Identical images+UV+material are baked in the same pass
+
+*) blender has limited support for baking into alpha channels. So a workaround is used to fully support RGBA textures.
+`<Input>_Alpha` must be a float type and the texture must have the same size as `<Input>`.
 
 ---
 

@@ -84,6 +84,14 @@ def on_update_target_socket_data(self, context):
 			self.uv_map = context.object.data.uv_layers[0].name
 		self.single_channel_target = 'R'
 		self.multi_channel_targets = {'R', 'G', 'B'}
+		
+		# Wenn Socket-Name mit "_Alpha" endet, setze auf Temporary Mode
+		if self.target_socket_name.endswith("_Alpha"):
+			self.bake_mode = 'TEMPORARY'
+			self.single_channel_target = 'R'
+			self.multi_channel_targets = {'R'}
+			# Color Space auf Non-Color setzen für Alpha-Texturen
+			self.color_space = 'Non-Color'
 	return None
 
 def on_update_target_socket_enum(self, context):
@@ -104,7 +112,11 @@ class MaterialBakeBase(bpy.types.PropertyGroup):
 	uv_map: bpy.props.EnumProperty(name="UV Map", items=get_uv_maps, update=on_update_uv_map_enum)
 	uv_map_name: bpy.props.StringProperty()
 
-	bake_mode: bpy.props.EnumProperty(items=[('NEW', "New", ""), ('EXISTING', "Existing", "")], default='NEW', name="Mode")
+	bake_mode: bpy.props.EnumProperty(items=[
+		('NEW', "New", ""), 
+		('EXISTING', "Existing", ""),
+		('TEMPORARY', "Temporary", "Image will be discarded after baking")
+	], default='NEW', name="Mode")
 	existing_image: bpy.props.PointerProperty(name="Image", type=bpy.types.Image)
 	resolution: bpy.props.IntProperty(name="Resolution", default=1024, min=64, max=8192)
 
@@ -243,11 +255,17 @@ def _safe_reset_socket(preset_or_override):
     return None
 
 
+def is_alpha_merge_setting(settings_source, socket):
+	"""Prüft ob ein Setting ein Alpha-Merge-Setting ist."""
+	return settings_source.target_socket_name.endswith("_Alpha") and socket.type in {'VALUE', 'INT', 'BOOLEAN'}
+
 def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 	"""Helper function to draw the common bake settings UI for a material.
 	It handles showing global preset values or material-specific overrides.
 	"""
 	settings_source = override_settings if override_settings.use_override else preset_settings
+	socket = get_active_socket(context)
+	is_alpha_merge = is_alpha_merge_setting(settings_source, socket)
 
 	# --- Target Socket ---
 	row = layout.row(align=True)
@@ -255,10 +273,14 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 	split.label(text="Target Input")
 	split.prop(settings_source, "target_socket", text="")
 
-	layout.separator()
-
 	if settings_source.target_socket == "NONE":
 		return
+
+	# --- Alpha Merge Info ---
+	if is_alpha_merge:
+		layout.label(text="Input will be merged into the alpha channel", icon='INFO')
+
+	layout.separator()
 
 	# --- Dynamic Channel Selection ---
 	socket = get_active_socket(context)
@@ -268,6 +290,8 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 		if socket.type in {'VALUE', 'INT', 'BOOLEAN'}:
 			split.label(text="Bake to Channel")
 			sub_row = split.row(align=True)
+			if is_alpha_merge:
+				sub_row.enabled = False
 			sub_row.prop(settings_source, "single_channel_target", expand=True)
 		else:
 			split.label(text="Bake Channels")
@@ -278,19 +302,26 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 			op_g.channel = 'G'
 			op_b = sub_row.operator(UNITY_OT_toggle_bake_channel.bl_idname, text="B", depress=('B' in settings_source.multi_channel_targets))
 			op_b.channel = 'B'
-			#op_a = sub_row.operator(UNITY_OT_toggle_bake_channel.bl_idname, text="A", depress=('A' in settings_source.multi_channel_targets))
-			#op_a.channel = 'A'
 
 	# --- Other Bake Settings ---
-	row = layout.row(align=True)
-	split = row.split(factor=0.4)
-	split.label(text="UV Map")
-	split.prop(settings_source, "uv_map", text="")
+	# UV Map: Ausblenden für Alpha-Merge
+	if not is_alpha_merge:
+		row = layout.row(align=True)
+		split = row.split(factor=0.4)
+		split.label(text="UV Map")
+		split.prop(settings_source, "uv_map", text="")
 
+	# Bake Mode
 	row = layout.row(align=True)
 	split = row.split(factor=0.4)
 	split.label(text="Bake Mode")
-	split.prop(settings_source, "bake_mode", text="")
+	if is_alpha_merge:
+		# Forciert auf TEMPORARY für Alpha-Merge
+		sub_row = split.row()
+		sub_row.enabled = False
+		sub_row.prop(settings_source, "bake_mode", text="")
+	else:
+		split.prop(settings_source, "bake_mode", text="")
 
 	if settings_source.bake_mode == 'NEW':
 		row = layout.row(align=True)
@@ -310,34 +341,38 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 		split.prop(settings_source, "existing_image", text="")
 
 	# --- Margin UI ---
-	row = layout.row(align=True)
-	split = row.split(factor=0.4)
-	split.label(text="Margin-Override")
+	# Margin: Ausblenden für Alpha-Merge
+	if not is_alpha_merge:
+		row = layout.row(align=True)
+		split = row.split(factor=0.4)
+		split.label(text="Margin-Override")
 
-	margin_row = split.row(align=True)
-	margin_row.prop(override_settings, "use_margin_override", text="")
+		margin_row = split.row(align=True)
+		margin_row.prop(override_settings, "use_margin_override", text="")
 
-	if override_settings.use_margin_override:
-		margin_row.prop(override_settings, "margin", text="")
-	else:
-		sub_row = margin_row.row()
-		sub_row.enabled = False
-		sub_row.prop(context.scene.render.bake, "margin", text="")
+		if override_settings.use_margin_override:
+			margin_row.prop(override_settings, "margin", text="")
+		else:
+			sub_row = margin_row.row()
+			sub_row.enabled = False
+			sub_row.prop(context.scene.render.bake, "margin", text="")
 
 	# --- Plausibility Warnings (full width below the split) ---
-	layout.separator()
-	if socket:
-		if settings_source.bake_mode == 'NEW':
-			if bake_utils.is_value_socket(socket) and settings_source.color_space == 'sRGB':
-				warning_box = layout.box()
-				warning_box.label(text=f"Socket likely expects linear data, but Color Space is sRGB.", icon='ERROR')
-
-		elif settings_source.bake_mode == 'EXISTING':
-			if settings_source.existing_image:
-				image_color_space = settings_source.existing_image.colorspace_settings.name
-				if bake_utils.is_value_socket(socket) and image_color_space == 'sRGB':
+	# Warnings nur für nicht-Alpha-Merge-Settings anzeigen
+	if not is_alpha_merge:
+		layout.separator()
+		if socket:
+			if settings_source.bake_mode == 'NEW':
+				if bake_utils.is_value_socket(socket) and settings_source.color_space == 'sRGB':
 					warning_box = layout.box()
-					warning_box.label(text=f"Socket expects linear data, but Image Color Space is sRGB.", icon='ERROR')
+					warning_box.label(text=f"Socket likely expects linear data, but Color Space is sRGB.", icon='ERROR')
+
+			elif settings_source.bake_mode == 'EXISTING':
+				if settings_source.existing_image:
+					image_color_space = settings_source.existing_image.colorspace_settings.name
+					if bake_utils.is_value_socket(socket) and image_color_space == 'sRGB':
+						warning_box = layout.box()
+						warning_box.label(text=f"Socket expects linear data, but Image Color Space is sRGB.", icon='ERROR')
 
 
 class SocketBakeInfo(bpy.types.PropertyGroup):
@@ -688,6 +723,90 @@ class UNITY_OT_bake_batch(bpy.types.Operator):
 			image,
 			image_meta)
 
+	def _sync_alpha_merge_settings(self, obj, context):
+		"""
+		Kopiert Werte vom Haupt-Preset zu Alpha-Merge-Settings.
+		Für Alpha-Merge-Settings werden UV Map, Resolution, Color Space und Margin vom Haupt-Setting übernommen.
+		"""
+		all_materials = [ms.material for ms in obj.material_slots if ms.material]
+		
+		# Durchsuche alle Presets nach Alpha-Merge-Paaren
+		for preset in obj.unity_bake_settings.presets:
+			if not preset.is_active:
+				continue
+			
+			for material in all_materials:
+				interface = baker.get_interface_node(material)
+				if not interface:
+					continue
+				
+				# Finde alle Alpha-Sockets in diesem Preset
+				for socket in interface.inputs:
+					if socket.name.endswith("_Alpha") and socket.type in {'VALUE', 'INT', 'BOOLEAN'}:
+						main_socket_name = socket.name[:-6]  # Entferne "_Alpha" Suffix
+						main_socket = interface.inputs.get(main_socket_name)
+						
+						if not main_socket:
+							continue
+						
+						# Finde die Settings für beide Sockets
+						alpha_effective_setting = None
+						main_effective_setting = None
+						
+						# Prüfe zuerst Preset-Level
+						if preset.target_socket_name == socket.name:
+							alpha_effective_setting = preset
+						if preset.target_socket_name == main_socket_name:
+							main_effective_setting = preset
+						
+						# Dann prüfe Overrides
+						for o in preset.material_overrides:
+							if o.material == material:
+								if o.target_socket_name == socket.name:
+									if o.use_override:
+										alpha_effective_setting = o
+									elif alpha_effective_setting is None:
+										alpha_effective_setting = preset
+								if o.target_socket_name == main_socket_name:
+									if o.use_override:
+										main_effective_setting = o
+									elif main_effective_setting is None:
+										main_effective_setting = preset
+						
+						# Prüfe ob beide Settings existieren und aktiv sind
+						if (alpha_effective_setting and main_effective_setting and
+						    alpha_effective_setting.target_socket_name == socket.name and 
+						    main_effective_setting.target_socket_name == main_socket_name):
+							# Kopiere Werte vom Haupt-Setting
+							alpha_effective_setting.uv_map_name = main_effective_setting.uv_map_name
+							alpha_effective_setting.uv_map = main_effective_setting.uv_map
+							alpha_effective_setting.resolution = main_effective_setting.resolution
+							alpha_effective_setting.color_space = main_effective_setting.color_space
+							
+							# Margin: Finde das Margin-Override für beide Settings
+							main_margin_override = None
+							alpha_margin_override = None
+							for o in preset.material_overrides:
+								if o.material == material:
+									# Margin-Override ist immer das Material-Override, unabhängig von use_override
+									if main_effective_setting == o or (main_effective_setting == preset and not any(ov.material == material and ov.use_override for ov in preset.material_overrides)):
+										main_margin_override = o
+									if alpha_effective_setting == o or (alpha_effective_setting == preset and not any(ov.material == material and ov.use_override for ov in preset.material_overrides)):
+										alpha_margin_override = o
+									break
+							
+							# Wenn kein Override existiert, erstelle einen für das Alpha-Setting
+							if not alpha_margin_override:
+								for o in preset.material_overrides:
+									if o.material == material:
+										alpha_margin_override = o
+										break
+							
+							if main_margin_override and main_margin_override.use_margin_override:
+								if alpha_margin_override:
+									alpha_margin_override.use_margin_override = True
+									alpha_margin_override.margin = main_margin_override.margin
+
 	def bake_batch(self, bake_data, obj, context):
 		if len(obj.unity_bake_settings.presets) == 0:
 			return
@@ -800,6 +919,10 @@ class UNITY_OT_bake_batch(bpy.types.Operator):
 
 		selected_objects_with_presets = [obj for obj in context.selected_objects if len(obj.unity_bake_settings.presets) > 0]
 
+		# Synchronisiere Alpha-Merge-Settings für alle Objekte vor dem Baking
+		for obj in selected_objects_with_presets:
+			self._sync_alpha_merge_settings(obj, context)
+		
 		for obj in selected_objects_with_presets:
 			result = self.bake_batch(bake_data, obj, context)
 			if result and 'CANCELLED' in result:
@@ -819,6 +942,11 @@ class UNITY_OT_bake_batch(bpy.types.Operator):
 		if not is_valid:
 			self.report({'ERROR'}, "Bake data validation failed. Check console for details.")
 			return {'CANCELLED'}
+		
+		# Plane Alpha-Merge-Vorgänge
+		bake_data.plan_alpha_merges()
+		if len(bake_data.alpha_merge_plans) > 0:
+			print(f"Planned {len(bake_data.alpha_merge_plans)} alpha merge(s)")
 
 		self.report({'INFO'}, f"Bake job created with {len(bake_data.passes)} passes.")
 
