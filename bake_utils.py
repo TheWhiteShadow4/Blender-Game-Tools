@@ -31,6 +31,7 @@ class BakeData():
 		"""
 		Identifiziert geplante Alpha-Merge-Vorgänge basierend auf den Settings.
 		Wird nach der Erstellung aller Passes aufgerufen.
+		Nur VALUE/INT/BOOLEAN Alpha-Sockets werden als Alpha-Merge akzeptiert.
 		"""
 		self.alpha_merge_plans.clear()
 		
@@ -66,9 +67,11 @@ class BakeData():
 			
 			if alpha_key in settings_map:
 				alpha_setting = settings_map[alpha_key]
-				# Erstelle Merge-Plan
-				merge_plan = AlphaMergePlan(main_setting, alpha_setting)
-				self.alpha_merge_plans.append(merge_plan)
+				# Prüfe ob der Alpha-Socket ein VALUE/INT/BOOLEAN Typ ist
+				if alpha_setting.input_socket and alpha_setting.input_socket.type in {'VALUE', 'INT', 'BOOLEAN'}:
+					# Erstelle Merge-Plan
+					merge_plan = AlphaMergePlan(main_setting, alpha_setting)
+					self.alpha_merge_plans.append(merge_plan)
 
 	def clear_images(self):
 		images_to_clear = set()

@@ -257,6 +257,8 @@ def _safe_reset_socket(preset_or_override):
 
 def is_alpha_merge_setting(settings_source, socket):
 	"""Prüft ob ein Setting ein Alpha-Merge-Setting ist."""
+	if not socket:
+		return False
 	return settings_source.target_socket_name.endswith("_Alpha") and socket.type in {'VALUE', 'INT', 'BOOLEAN'}
 
 def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
@@ -264,8 +266,6 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 	It handles showing global preset values or material-specific overrides.
 	"""
 	settings_source = override_settings if override_settings.use_override else preset_settings
-	socket = get_active_socket(context)
-	is_alpha_merge = is_alpha_merge_setting(settings_source, socket)
 
 	# --- Target Socket ---
 	row = layout.row(align=True)
@@ -276,6 +276,10 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 	if settings_source.target_socket == "NONE":
 		return
 
+	# Hole Socket einmalig für alle Prüfungen
+	socket = get_active_socket(context)
+	is_alpha_merge = is_alpha_merge_setting(settings_source, socket)
+
 	# --- Alpha Merge Info ---
 	if is_alpha_merge:
 		layout.label(text="Input will be merged into the alpha channel", icon='INFO')
@@ -283,7 +287,6 @@ def draw_bake_settings_ui(layout, context, override_settings, preset_settings):
 	layout.separator()
 
 	# --- Dynamic Channel Selection ---
-	socket = get_active_socket(context)
 	row = layout.row(align=True)
 	split = row.split(factor=0.4)
 	if socket:

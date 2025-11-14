@@ -211,5 +211,5 @@ The baking system requires materials with a BSDF shader as output (Principled BS
 ## Support & Development
 
 **Author:** TheWhiteShadow  
-**Version:** 1.2
+**Version:** 1.3
 **Blender:** 4.4+
