@@ -21,9 +21,8 @@ INVALID_PROJECT_PATH_TEXT = "Invalid Project Path"
 EXPORT_PATH_TEXT = "Export Path"
 
 # Subpanel labels
-EXPORT_PANEL_LABEL = "Export & Fixes"
+EXPORT_PANEL_LABEL = "Export"
 MERGE_PANEL_LABEL = "Merge"
-SETTINGS_PANEL_LABEL = "Project Settings"
 BAKING_SHORTCUT_LABEL = "Baking"
 
 # Cleanup Panel
@@ -101,6 +100,13 @@ class UNITY_PT_cleanup_panel(bpy.types.Panel):
         layout = self.layout
         layout.use_property_split = True
         layout.use_property_decorate = False
+        props = context.scene.unity_tool_properties
+        
+        # Fixes section
+        box = layout.box()
+        box.label(text="Fixes")
+        col = box.column(align=True)
+        col.operator("unity.apply_rotation_fix", text=FIX_ROTATION_TEXT)
         
         # Individual cleanup operations
         box = layout.box()
@@ -205,7 +211,7 @@ class UNITY_PT_export_panel(bpy.types.Panel):
         props = context.scene.unity_tool_properties
 
         col = layout.column(align=True)
-        col.operator("unity.apply_rotation_fix", text=FIX_ROTATION_TEXT)
+        col.prop(props, "export_path", text=EXPORT_PATH_TEXT)
         # Checkbox full-width to avoid truncation
         sub = layout.column(align=True)
         sub.use_property_split = False
@@ -239,32 +245,6 @@ class UNITY_PT_merge_panel(bpy.types.Panel):
         row.operator("unity.merge_objects", text=MERGE_COLLECTION_TEXT)
 
 
-class UNITY_PT_settings_panel(bpy.types.Panel):
-    bl_label = SETTINGS_PANEL_LABEL
-    bl_idname = "UNITY_PT_settings_panel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = MAIN_PANEL_CATEGORY
-    bl_parent_id = "UNITY_PT_main_panel"
-    bl_options = {'DEFAULT_CLOSED'}
-
-    def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False
-        props = context.scene.unity_tool_properties
-
-        col = layout.column(align=True)
-        col.prop(props, "engine_project_path", text=PROJECT_TEXT)
-        if props.engine_version:
-            col.label(text=f"{VERSION_TEXT}: {props.engine_version}", icon='INFO')
-        if props.engine_project_path and not props.is_path_valid:
-            row = layout.row()
-            row.alert = True
-            row.label(text=INVALID_PROJECT_PATH_TEXT, icon='ERROR')
-        col.prop(props, "export_path", text=EXPORT_PATH_TEXT)
-
-
 class UNITY_PT_baking_shortcut_panel(bpy.types.Panel):
     bl_label = BAKING_SHORTCUT_LABEL
     bl_idname = "UNITY_PT_baking_shortcut_panel"
@@ -288,7 +268,6 @@ def register():
     bpy.utils.register_class(UNITY_PT_main_panel)
     bpy.utils.register_class(UNITY_PT_export_panel)
     bpy.utils.register_class(UNITY_PT_merge_panel)
-    bpy.utils.register_class(UNITY_PT_settings_panel)
     bpy.utils.register_class(UNITY_PT_baking_shortcut_panel)
     bpy.utils.register_class(UNITY_PT_cleanup_panel)
     bpy.utils.register_class(UNITY_PT_animation_panel)
@@ -298,7 +277,6 @@ def unregister():
     bpy.utils.unregister_class(UNITY_PT_animation_panel)
     bpy.utils.unregister_class(UNITY_PT_cleanup_panel)
     bpy.utils.unregister_class(UNITY_PT_baking_shortcut_panel)
-    bpy.utils.unregister_class(UNITY_PT_settings_panel)
     bpy.utils.unregister_class(UNITY_PT_merge_panel)
     bpy.utils.unregister_class(UNITY_PT_export_panel)
     bpy.utils.unregister_class(UNITY_PT_main_panel)
