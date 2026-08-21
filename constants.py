@@ -15,6 +15,11 @@ GODOT_FBX_SCALE = 1.0
 GODOT_AXIS_FORWARD = '-Z'
 GODOT_AXIS_UP = 'Y'
 
+# ===== Material Import =====
+# Beim Unity-Import projektweit nach vorhandenen Materialien mit gleichem Namen suchen,
+# bevor ein neues Material angelegt wird. (Flag wird in die .imp.json geschrieben.)
+SEARCH_PROJECT_MATERIALS = True
+
 # ===== Tolerances =====
 ROTATION_TOLERANCE = 0.0001
 GAMMA_CORRECTION_FACTOR = 2.2

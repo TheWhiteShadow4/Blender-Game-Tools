@@ -216,7 +216,10 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 	json_filepath = fbx_filepath + ".imp.json"
 	try:
 		with open(json_filepath, 'w') as f:
-			json.dump({"materials": materials_data}, f, indent=4)
+			json.dump({
+				"materials": materials_data,
+				"searchProjectMaterials": constants.SEARCH_PROJECT_MATERIALS,
+			}, f, indent=4)
 		operator.report({'INFO'}, f"Exported material data for {len(materials_data)} materials.")
 	except Exception as e:
 		operator.report({'WARNING'}, f"Could not write material json: {e}")

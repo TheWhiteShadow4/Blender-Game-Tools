@@ -28,37 +28,52 @@ public class MaterialData
 public class MaterialDataList
 {
     public MaterialData[] materials;
+    public bool searchProjectMaterials;
 }
 
 public class BlenderAssetPostprocessor : AssetPostprocessor
 {
-    // Step 1: Prepare the FBX importer BEFORE it imports the model.
+    // Runs BEFORE the model is imported. This is the correct place to set import settings
+    // and to remap the FBX material slots to our external materials.
     void OnPreprocessModel()
     {
-        string materialJsonPath = assetPath + ".imp.json";
-        if (File.Exists(materialJsonPath))
+        if (!(assetImporter is ModelImporter modelImporter))
+            return;
+
+        string jsonPath = assetPath + ".imp.json";
+        if (!File.Exists(jsonPath))
+            return;
+
+        modelImporter.useFileScale = false;
+        modelImporter.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
+        modelImporter.materialName = ModelImporterMaterialName.BasedOnMaterialName;
+        modelImporter.materialSearch = ModelImporterMaterialSearch.RecursiveUp;
+
+        MaterialDataList materialList = ReadMaterialList(jsonPath);
+        if (materialList == null || materialList.materials == null)
+            return;
+
+        string materialsDirectory = Path.Combine(Path.GetDirectoryName(assetPath), "Materials");
+
+        // Materials are created in OnPostprocessAllAssets. On the reimport that follows,
+        // they already exist, so we can remap the FBX material slots to them here. Adding
+        // remaps during OnPreprocessModel (rather than OnPostprocessAllAssets) avoids
+        // Unity's "referencing an asset from the previous import" error.
+        foreach (MaterialData materialData in materialList.materials)
         {
-            if (assetImporter is ModelImporter modelImporter)
+            Material material = ResolveExistingMaterial(materialData, materialList.searchProjectMaterials, materialsDirectory);
+            if (material != null)
             {
-                modelImporter.useFileScale = false;
-
-                // We create the materials ourselves and remap them via AddRemap in
-                // OnPostprocessAllAssets. ImportViaMaterialDescription creates the material
-                // slots, which we then remap to our own external materials.
-                modelImporter.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
-
-                // Configure material search to find our newly created materials by name, not texture.
-                modelImporter.materialName = ModelImporterMaterialName.BasedOnMaterialName;
-                modelImporter.materialSearch = ModelImporterMaterialSearch.RecursiveUp;
+                var identifier = new AssetImporter.SourceAssetIdentifier(typeof(Material), materialData.materialName);
+                modelImporter.AddRemap(identifier, material);
             }
         }
     }
 
-    // This method is called after ALL assets have been imported.
-    // This is our main entry point to avoid API restrictions.
+    // Runs after all assets have been imported. We create/update the external materials
+    // here (which is safe), then schedule a reimport so OnPreprocessModel applies the remaps.
     static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
     {
-        // Find all imported .imp.json files from our addon.
         var jsonFilesToProcess = new List<string>();
         foreach (string path in importedAssets)
         {
@@ -68,83 +83,59 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             }
         }
 
-        if (jsonFilesToProcess.Count == 0) return;
+        if (jsonFilesToProcess.Count == 0)
+            return;
 
         bool assetsChanged = false;
-        var importersToReimport = new HashSet<ModelImporter>();
+        var fbxPathsToReimport = new HashSet<string>();
 
-        foreach(string jsonPath in jsonFilesToProcess)
+        foreach (string jsonPath in jsonFilesToProcess)
         {
             // The json file is named like 'path/to/model.fbx.imp.json'.
-            // We need to get 'path/to/model.fbx' from that.
             string fbxPath = jsonPath.Substring(0, jsonPath.Length - ".imp.json".Length);
-
-            // Check if the corresponding FBX file exists.
-            if (!File.Exists(fbxPath)) continue;
-
-            // Read material data list
-            string jsonContent = File.ReadAllText(jsonPath);
-            MaterialDataList materialList = JsonUtility.FromJson<MaterialDataList>(jsonContent);
-
-            if (materialList == null || materialList.materials == null || materialList.materials.Length == 0)
-            {
+            if (!File.Exists(fbxPath))
                 continue;
-            }
+
+            MaterialDataList materialList = ReadMaterialList(jsonPath);
+            if (materialList == null || materialList.materials == null || materialList.materials.Length == 0)
+                continue;
 
             string fbxDirectory = Path.GetDirectoryName(fbxPath);
-            string materialsDirectoryPath = Path.Combine(fbxDirectory, "Materials");
+            string materialsDirectory = Path.Combine(fbxDirectory, "Materials");
 
-            // Create the directory if it doesn't exist.
-            if (!Directory.Exists(materialsDirectoryPath))
+            if (!Directory.Exists(materialsDirectory))
             {
-                Directory.CreateDirectory(materialsDirectoryPath);
+                Directory.CreateDirectory(materialsDirectory);
             }
 
-            // Ensure the FBX importer is available for remapping later
-            ModelImporter modelImporter = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
-
-            foreach (var materialData in materialList.materials)
+            foreach (MaterialData materialData in materialList.materials)
             {
                 string materialFileName = materialData.materialName + ".mat";
-                string materialPath = Path.Combine(materialsDirectoryPath, materialFileName).Replace('\\', '/');
+                string materialPath = Path.Combine(materialsDirectory, materialFileName).Replace('\\', '/');
 
-                Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-                bool isNewMaterial = material == null;
+                Material material = ResolveExistingMaterial(materialData, materialList.searchProjectMaterials, materialsDirectory);
 
-                if (isNewMaterial)
+                if (material == null)
                 {
-                    // Check if shaderName is null (unsupported material from Blender)
+                    // Unsupported materials (no shader) can only be reused, never created.
                     if (string.IsNullOrEmpty(materialData.shaderName))
                     {
-                        // Try to find existing material in project by name
-                        string[] guids = AssetDatabase.FindAssets($"{materialData.materialName} t:Material");
-                        if (guids.Length > 0)
-                        {
-                            string existingMaterialPath = AssetDatabase.GUIDToAssetPath(guids[0]);
-                            material = AssetDatabase.LoadAssetAtPath<Material>(existingMaterialPath);
-                            Debug.Log($"Blender Importer: Found existing material '{materialData.materialName}' at '{existingMaterialPath}' for unsupported shader.", material);
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"Blender Importer: Material '{materialData.materialName}' uses unsupported shader and no existing material found. Skipping.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
-                            continue; // Skip this material
-                        }
+                        Debug.LogWarning($"Blender Importer: Material '{materialData.materialName}' uses unsupported shader and no existing material found. Skipping.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
+                        continue;
                     }
-                    else
+
+                    Shader shader = Shader.Find(materialData.shaderName);
+                    if (shader == null)
                     {
-                        Debug.Log($"Blender Importer: Creating new material for {jsonPath}");
-                        Shader shader = Shader.Find(materialData.shaderName);
-                        if (shader == null)
-                        {
-                            Debug.LogWarning($"Blender Importer: Shader '{materialData.shaderName}' not found. Skipping material '{materialData.materialName}'.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
-                            continue; // Skip to next material
-                        }
-                        material = new Material(shader);
-                        AssetDatabase.CreateAsset(material, materialPath);
+                        Debug.LogWarning($"Blender Importer: Shader '{materialData.shaderName}' not found. Skipping material '{materialData.materialName}'.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
+                        continue;
                     }
+
+                    Debug.Log($"Blender Importer: Creating new material '{materialData.materialName}'.");
+                    material = new Material(shader);
+                    AssetDatabase.CreateAsset(material, materialPath);
                 }
 
-                // Apply properties
                 if (materialData.properties != null)
                 {
                     foreach (MaterialProperty prop in materialData.properties)
@@ -155,39 +146,74 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
 
                 EditorUtility.SetDirty(material);
                 assetsChanged = true;
-
-                // Now that the material is created/updated, remap the FBX material slot to it.
-                if (modelImporter != null)
-                {
-                    // The FBX material is identified by its type and its name as stored in the
-                    // FBX (which matches our Blender material name). SourceAssetIdentifier is a
-                    // nested type of AssetImporter.
-                    var sourceIdentifier = new AssetImporter.SourceAssetIdentifier(typeof(Material), materialData.materialName);
-                    modelImporter.AddRemap(sourceIdentifier, material);
-                    importersToReimport.Add(modelImporter);
-                }
             }
-        }
 
-        // Reimport affected models once, after all remaps are registered.
-        // The JSON files are still present at this point so OnPreprocessModel can
-        // configure the importer correctly during the reimport.
-        foreach (var importer in importersToReimport)
-        {
-            EditorUtility.SetDirty(importer);
-            importer.SaveAndReimport();
-        }
-
-        // Clean up the processed json files.
-        foreach (string jsonPath in jsonFilesToProcess)
-        {
-            AssetDatabase.DeleteAsset(jsonPath);
+            fbxPathsToReimport.Add(fbxPath);
         }
 
         if (assetsChanged)
         {
             AssetDatabase.SaveAssets();
         }
+
+        // Reimport the affected models on the next editor tick. Remapping happens in
+        // OnPreprocessModel; doing the reimport synchronously from here can trigger
+        // "AssetImporter is referencing an asset from the previous import".
+        foreach (string fbxPath in fbxPathsToReimport)
+        {
+            string path = fbxPath;
+            EditorApplication.delayCall += () =>
+            {
+                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+
+                // The sidecar JSON has now been consumed by OnPreprocessModel; clean it up.
+                string jsonPath = path + ".imp.json";
+                if (File.Exists(jsonPath))
+                {
+                    AssetDatabase.DeleteAsset(jsonPath);
+                }
+            };
+        }
+    }
+
+    private static MaterialDataList ReadMaterialList(string jsonPath)
+    {
+        if (!File.Exists(jsonPath))
+            return null;
+
+        string jsonContent = File.ReadAllText(jsonPath);
+        return JsonUtility.FromJson<MaterialDataList>(jsonContent);
+    }
+
+    // Finds an existing material for the given data without creating anything.
+    // Order: expected Materials subfolder first, then (optionally) the whole project by name.
+    private static Material ResolveExistingMaterial(MaterialData materialData, bool searchProject, string materialsDirectory)
+    {
+        string materialPath = Path.Combine(materialsDirectory, materialData.materialName + ".mat").Replace('\\', '/');
+        Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
+        if (material != null)
+            return material;
+
+        // Unsupported shaders can never be created, so always fall back to a name search.
+        if (searchProject || string.IsNullOrEmpty(materialData.shaderName))
+            return FindMaterialByName(materialData.materialName);
+
+        return null;
+    }
+
+    private static Material FindMaterialByName(string materialName)
+    {
+        string[] guids = AssetDatabase.FindAssets($"{materialName} t:Material");
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material != null && material.name == materialName)
+            {
+                return material;
+            }
+        }
+        return null;
     }
 
     private static void ApplyProperty(Material material, MaterialProperty prop)

@@ -1,5 +1,6 @@
 # TODO
 
+- [ ] Blender-Addon-Settings anlegen, um Importer-Flags (aktuell `SEARCH_PROJECT_MATERIALS` als Konstante) konfigurierbar zu machen.
 
 # Bugs
 - [ ] Bake presets Button wird nicht deaktiviert, wenn keine Presets aktiv sind
