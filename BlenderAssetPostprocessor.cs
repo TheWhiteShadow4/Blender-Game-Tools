@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -41,9 +42,9 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             {
                 modelImporter.useFileScale = false;
 
-                // We must use an import mode that creates the material slots so we can remap them later. 
-                // 'None' will not work as it discards the material slot information from the FBX.
-                // 'ImportViaMaterialDescription' is the modern approach that allows remapping.
+                // We create the materials ourselves and remap them via AddRemap in
+                // OnPostprocessAllAssets. ImportViaMaterialDescription creates the material
+                // slots, which we then remap to our own external materials.
                 modelImporter.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
 
                 // Configure material search to find our newly created materials by name, not texture.
@@ -144,28 +145,26 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                 }
 
                 // Apply properties
-                foreach (MaterialProperty prop in materialData.properties)
+                if (materialData.properties != null)
                 {
-                    ApplyProperty(material, prop);
+                    foreach (MaterialProperty prop in materialData.properties)
+                    {
+                        ApplyProperty(material, prop);
+                    }
                 }
 
                 EditorUtility.SetDirty(material);
                 assetsChanged = true;
 
-                // Now that the material is created/updated, find the FBX ModelImporter and assign it.
+                // Now that the material is created/updated, remap the FBX material slot to it.
                 if (modelImporter != null)
                 {
-                    // Find the specific material identifier from the FBX that matches our material name
-                    var sourceIdentifier = modelImporter.GetExternalObjectMap()
-                                                         .Keys
-                                                         .FirstOrDefault(id => id.type == typeof(Material) && id.name == materialData.materialName);
-
-                    // If we found a matching material in the FBX, remap it.
-                    if (sourceIdentifier.name != null)
-                    {
-                        modelImporter.AddRemap(sourceIdentifier, material);
-                        importersToReimport.Add(modelImporter);
-                    }
+                    // The FBX material is identified by its type and its name as stored in the
+                    // FBX (which matches our Blender material name). SourceAssetIdentifier is a
+                    // nested type of AssetImporter.
+                    var sourceIdentifier = new AssetImporter.SourceAssetIdentifier(typeof(Material), materialData.materialName);
+                    modelImporter.AddRemap(sourceIdentifier, material);
+                    importersToReimport.Add(modelImporter);
                 }
             }
         }
@@ -198,7 +197,7 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             return;
         }
 
-        if (!TryResolveProperty(material, prop.name, out string propertyName, out ShaderUtil.ShaderPropertyType propertyType))
+        if (!TryResolveProperty(material, prop.name, out string propertyName, out ShaderPropertyType propertyType))
         {
             Debug.LogWarning($"Blender Importer: Property '{prop.name}' (or '_{prop.name}') not found on shader '{material.shader.name}'. Skipping property.", material);
             return;
@@ -213,11 +212,11 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                     return;
                 }
 
-                if (propertyType == ShaderUtil.ShaderPropertyType.Color)
+                if (propertyType == ShaderPropertyType.Color)
                 {
                     material.SetColor(propertyName, new Color(prop.value[0], prop.value[1], prop.value[2], prop.value[3]));
                 }
-                else if (propertyType == ShaderUtil.ShaderPropertyType.Vector)
+                else if (propertyType == ShaderPropertyType.Vector)
                 {
                     material.SetVector(propertyName, new Vector4(prop.value[0], prop.value[1], prop.value[2], prop.value[3]));
                 }
@@ -228,7 +227,7 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                 break;
 
             case "Float":
-                if (propertyType == ShaderUtil.ShaderPropertyType.Float || propertyType == ShaderUtil.ShaderPropertyType.Range)
+                if (propertyType == ShaderPropertyType.Float || propertyType == ShaderPropertyType.Range)
                 {
                     material.SetFloat(propertyName, prop.floatValue);
                 }
@@ -239,7 +238,7 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                 break;
 
             case "Texture":
-                if (propertyType == ShaderUtil.ShaderPropertyType.TexEnv)
+                if (propertyType == ShaderPropertyType.Texture)
                 {
                     if (string.IsNullOrEmpty(prop.path))
                     {
@@ -269,32 +268,38 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
         }
     }
 
-    private static bool TryResolveProperty(Material material, string requestedName, out string propertyName, out ShaderUtil.ShaderPropertyType propertyType)
+    private static bool TryResolveProperty(Material material, string requestedName, out string propertyName, out ShaderPropertyType propertyType)
     {
-        propertyName = requestedName;
+        propertyName = null;
         propertyType = default;
 
-        // If the property doesn't exist, try adding a leading underscore, which is a common Unity convention.
-        if (!material.HasProperty(propertyName))
-        {
-            string underscoredName = "_" + requestedName;
-            if (material.HasProperty(underscoredName))
-            {
-                propertyName = underscoredName;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        int propertyIndex = material.shader.FindPropertyIndex(propertyName);
-        if (propertyIndex < 0)
-        {
+        if (material == null || material.shader == null || string.IsNullOrEmpty(requestedName))
             return false;
+
+        Shader shader = material.shader;
+        string underscoredName = "_" + requestedName;
+
+        // Match against the shader's actual properties by comparing both the reference name
+        // (e.g. "_BaseColor") and the display name (e.g. "Base Color") case-insensitively.
+        // This avoids the ambiguity of Material.HasProperty/Shader.FindPropertyIndex with
+        // respect to the leading underscore.
+        int propertyCount = shader.GetPropertyCount();
+        for (int i = 0; i < propertyCount; i++)
+        {
+            string referenceName = shader.GetPropertyName(i);
+            string description = shader.GetPropertyDescription(i);
+
+            if (string.Equals(referenceName, requestedName, System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(referenceName, underscoredName, System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(description, requestedName, System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(description, underscoredName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                propertyName = referenceName;
+                propertyType = shader.GetPropertyType(i);
+                return true;
+            }
         }
 
-        propertyType = ShaderUtil.GetPropertyType(material.shader, propertyIndex);
-        return true;
+        return false;
     }
 }
