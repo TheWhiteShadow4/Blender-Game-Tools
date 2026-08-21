@@ -21,7 +21,7 @@ class Baker():
 		# Liste aller temporären Nodes, die z.B. für Alpha-Merge-Passes erstellt wurden
 		# Wird verwendet, um diese Nodes nach Abschluss des Baking zu entfernen
 		self.temporary_nodes = []  # Liste von (node, material) Tupeln
-	
+
 	def get_or_create_dummy_image(self):
 		if not self.dummy_image:
 			self.dummy_image = bpy.data.images.new(name=constants.DUMMY_IMAGE_NAME, width=1, height=1)
@@ -46,18 +46,18 @@ class Baker():
 
 			if self.debug_pass_idx >= 0:
 				self.bake_data.passes = [self.bake_data.passes[self.debug_pass_idx]]
-			
+
 			# Alle Bake-Passes durchführen
 			for bake_pass in self.bake_data.passes:
 				print(f"Bake Pass {bake_pass.index}")
 				self.bake_pass(bake_pass)
-			
+
 			alpha_results = self._combine_alpha_channels()
-			
+
 			# Zusammenfassung der Ergebnisse
 			success_count = sum(1 for success, _ in alpha_results if success)
 			fail_count = len(alpha_results) - success_count
-			
+
 			if alpha_results:
 				if fail_count > 0:
 					print(f"Summary: {success_count} successful, {fail_count} failed")
@@ -80,7 +80,7 @@ class Baker():
 			if self.dummy_image:
 				bpy.data.images.remove(self.dummy_image)
 
-		return {'FINISHED'}	
+		return {'FINISHED'}
 
 	def bake_pass(self, bake_pass: bake_utils.BakePass):
 		try:
@@ -96,7 +96,7 @@ class Baker():
 				bpy.ops.object.bake(type='DIFFUSE', pass_filter={'COLOR'}, save_mode='INTERNAL', margin=bake_pass.max_margin)
 			else:
 				bpy.ops.object.bake(type='EMIT', save_mode='INTERNAL', margin=bake_pass.max_margin)
-			
+
 			# Cleanup
 			if self.debug_pass_idx < 0:
 				for bake_socket in self.bake_sockets:
@@ -118,7 +118,7 @@ class Baker():
 		Speichert den aktiven State.
 		'''
 		prev_hide_render = {obj: obj.hide_render for obj in self.objects}
-		
+
 		original_engine = bpy.context.scene.render.engine
 		original_use_clear = bpy.context.scene.render.bake.use_clear
 
@@ -140,25 +140,25 @@ class Baker():
 		"""
 		Führt die geplanten Alpha-Merge-Vorgänge aus.
 		Aktualisiert auch die Node-Verbindungen, sodass Alpha-Sockets auf die kombinierte Haupttextur zeigen.
-		
+
 		Returns:
 			list: Liste von (success, message) Tupeln für jede Kombination
 		"""
 		results = []
-		
+
 		# Führe geplante Merges aus
 		processed_images = set()
-		
+
 		for merge_plan in self.bake_data.alpha_merge_plans:
 			# <Hole die Images nach dem Baking aus den Settings. Wenn die nicht da sind, ist beim Baking etwas schief gelaufen.
 			main_image = merge_plan.main_setting.image
 			if not main_image:
 				raise ValueError(f"Main image not found for {merge_plan.main_setting.material.name} {merge_plan.main_setting.input_socket.name}")
-			
+
 			alpha_image = merge_plan.alpha_setting.image
 			if not alpha_image:
 				continue
-			
+
 			if main_image not in processed_images:
 				processed_images.add(main_image)
 				# Wir können an der Stelle die Textur noch nicht löschen, da wir sonst den alpha_image_proxy nicht mehr finden können.
@@ -166,7 +166,7 @@ class Baker():
 				results.append((success, message))
 				if success:
 					print(message)
-			
+
 			# Finde den Socket im Interface Node
 			mat = merge_plan.main_setting.material
 			interface_node = get_interface_node(mat)
@@ -179,12 +179,12 @@ class Baker():
 			alpha_image_proxy.remove()
 			main_image_proxy = metadata.image_proxies[merge_plan.main_setting.image]
 			main_image_proxy.connect_alpha_to(alpha_socket)
-		
+
 		return results
 
 	def _collect_materials_for_pass(self, bake_pass, diffuse_pipeline):
 		'''
-		Sammelt alle Materialien aus den ausgewählten Objekten. 
+		Sammelt alle Materialien aus den ausgewählten Objekten.
 		Jedes Material muss nur einaml verarbeitet werden.
 		'''
 		self.bake_sockets = []
@@ -271,16 +271,19 @@ class MaterialMetadata():
 				raise ValueError(f"Alpha channel is only supported in diffuse pipeline.")
 		else:
 			if not self.combine_node:
-				self.combine_node = self.material.node_tree.nodes.new('ShaderNodeCombineRGB')
-				self.material.node_tree.links.new(self.combine_node.outputs['Image'], self.proxy_output_pin)
-			self.material.node_tree.links.new(output_to_bake, self.combine_node.inputs[ch])
+				self.combine_node = self.material.node_tree.nodes.new('ShaderNodeCombineColor')
+				self.material.node_tree.links.new(self.combine_node.outputs['Color'], self.proxy_output_pin)
+			input_name = bake_utils.CHANNEL_MAP.get(ch)
+			if input_name is None:
+				raise ValueError(f"Invalid channel '{ch}' for combine color node. Must be one of {list(bake_utils.CHANNEL_MAP.keys())}.")
+			self.material.node_tree.links.new(output_to_bake, self.combine_node.inputs[input_name])
 
 
 	def cleanup(self):
 		self.proxy_output_pin = self.output_node.inputs['Surface']
 		for fs in self.original_shader_output:
 			self.material.node_tree.links.new(fs, self.proxy_output_pin)
-		
+
 		if self.combine_node:
 			self.material.node_tree.nodes.remove(self.combine_node)
 			self.combine_node = None
@@ -337,7 +340,7 @@ class BakeMaterial():
 					self.proxy_value_node = self.material.node_tree.nodes.new('ShaderNodeRGB')
 					self.proxy_value_node.outputs[0].default_value = self.input_socket.default_value
 					self.output_to_bake = self.proxy_value_node.outputs['Color']
-					
+
 				self.proxy_value_node.location = self.input_socket.node.location
 				self.proxy_value_node.location.x -= 200
 
@@ -368,7 +371,7 @@ class BakeMaterial():
 		if self.is_dummy():
 			self.image_node.remove()
 			return
-		
+
 		self.image_node.connect_to(self.input_socket, self.channels)
 		if self.alpha_to_bake:
 			self.image_node.connect_alpha_to(self.alpha_socket)
