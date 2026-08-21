@@ -40,12 +40,11 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             if (assetImporter is ModelImporter modelImporter)
             {
                 modelImporter.useFileScale = false;
-                
+
                 // We must use an import mode that creates the material slots so we can remap them later. 
                 // 'None' will not work as it discards the material slot information from the FBX.
                 // 'ImportViaMaterialDescription' is the modern approach that allows remapping.
                 modelImporter.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
-                modelImporter.materialLocation = ModelImporterMaterialLocation.External;
 
                 // Configure material search to find our newly created materials by name, not texture.
                 modelImporter.materialName = ModelImporterMaterialName.BasedOnMaterialName;
@@ -58,7 +57,7 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
     // This is our main entry point to avoid API restrictions.
     static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
     {
-        // Find all imported .mat.json files from our addon.
+        // Find all imported .imp.json files from our addon.
         var jsonFilesToProcess = new List<string>();
         foreach (string path in importedAssets)
         {
@@ -71,13 +70,14 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
         if (jsonFilesToProcess.Count == 0) return;
 
         bool assetsChanged = false;
+        var importersToReimport = new HashSet<ModelImporter>();
 
         foreach(string jsonPath in jsonFilesToProcess)
         {
             // The json file is named like 'path/to/model.fbx.imp.json'.
             // We need to get 'path/to/model.fbx' from that.
             string fbxPath = jsonPath.Substring(0, jsonPath.Length - ".imp.json".Length);
-            
+
             // Check if the corresponding FBX file exists.
             if (!File.Exists(fbxPath)) continue;
 
@@ -133,7 +133,8 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                     {
                         Debug.Log($"Blender Importer: Creating new material for {jsonPath}");
                         Shader shader = Shader.Find(materialData.shaderName);
-                        if (shader == null) {
+                        if (shader == null)
+                        {
                             Debug.LogWarning($"Blender Importer: Shader '{materialData.shaderName}' not found. Skipping material '{materialData.materialName}'.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
                             continue; // Skip to next material
                         }
@@ -141,36 +142,13 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                         AssetDatabase.CreateAsset(material, materialPath);
                     }
                 }
+
                 // Apply properties
                 foreach (MaterialProperty prop in materialData.properties)
                 {
-                    string propertyName = prop.name;
-                    // If the property doesn't exist, try adding a leading underscore, which is a common Unity convention.
-                    if (!material.HasProperty(propertyName))
-                    {
-                        string underscoredName = "_" + propertyName;
-                        if (material.HasProperty(underscoredName))
-                        {
-                            propertyName = underscoredName;
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"Blender Importer: Property '{prop.name}' (or '{underscoredName}') not found on shader '{material.shader.name}'. Skipping property.", material);
-                            continue; // Skip this property
-                        }
-                    }
-
-                    // Set the property value using the potentially modified name.
-                    if (prop.type == "Color") { material.SetColor(propertyName, new Color(prop.value[0], prop.value[1], prop.value[2], prop.value[3])); }
-                    else if (prop.type == "Float") { material.SetFloat(propertyName, prop.floatValue); }
-                    else if (prop.type == "Texture" && !string.IsNullOrEmpty(prop.path))
-                    {
-                        Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(prop.path);
-                        if (tex != null) { material.SetTexture(propertyName, tex); }
-                        else { Debug.LogWarning($"Blender Importer: Could not load texture '{prop.path}'.", material); }
-                    }
+                    ApplyProperty(material, prop);
                 }
-                
+
                 EditorUtility.SetDirty(material);
                 assetsChanged = true;
 
@@ -186,14 +164,24 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
                     if (sourceIdentifier.name != null)
                     {
                         modelImporter.AddRemap(sourceIdentifier, material);
+                        importersToReimport.Add(modelImporter);
                     }
-                    
-                    EditorUtility.SetDirty(modelImporter);
-                    modelImporter.SaveAndReimport();
                 }
             }
+        }
 
-            // Clean up the processed json file
+        // Reimport affected models once, after all remaps are registered.
+        // The JSON files are still present at this point so OnPreprocessModel can
+        // configure the importer correctly during the reimport.
+        foreach (var importer in importersToReimport)
+        {
+            EditorUtility.SetDirty(importer);
+            importer.SaveAndReimport();
+        }
+
+        // Clean up the processed json files.
+        foreach (string jsonPath in jsonFilesToProcess)
+        {
             AssetDatabase.DeleteAsset(jsonPath);
         }
 
@@ -202,4 +190,111 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             AssetDatabase.SaveAssets();
         }
     }
-} 
+
+    private static void ApplyProperty(Material material, MaterialProperty prop)
+    {
+        if (material == null || prop == null || string.IsNullOrEmpty(prop.name))
+        {
+            return;
+        }
+
+        if (!TryResolveProperty(material, prop.name, out string propertyName, out ShaderUtil.ShaderPropertyType propertyType))
+        {
+            Debug.LogWarning($"Blender Importer: Property '{prop.name}' (or '_{prop.name}') not found on shader '{material.shader.name}'. Skipping property.", material);
+            return;
+        }
+
+        switch (prop.type)
+        {
+            case "Color":
+                if (prop.value == null || prop.value.Length < 4)
+                {
+                    Debug.LogWarning($"Blender Importer: Property '{prop.name}' has no valid color value. Skipping property.", material);
+                    return;
+                }
+
+                if (propertyType == ShaderUtil.ShaderPropertyType.Color)
+                {
+                    material.SetColor(propertyName, new Color(prop.value[0], prop.value[1], prop.value[2], prop.value[3]));
+                }
+                else if (propertyType == ShaderUtil.ShaderPropertyType.Vector)
+                {
+                    material.SetVector(propertyName, new Vector4(prop.value[0], prop.value[1], prop.value[2], prop.value[3]));
+                }
+                else
+                {
+                    Debug.LogWarning($"Blender Importer: Property '{prop.name}' is of type '{propertyType}' on shader '{material.shader.name}', but Blender exported a Color. Skipping property.", material);
+                }
+                break;
+
+            case "Float":
+                if (propertyType == ShaderUtil.ShaderPropertyType.Float || propertyType == ShaderUtil.ShaderPropertyType.Range)
+                {
+                    material.SetFloat(propertyName, prop.floatValue);
+                }
+                else
+                {
+                    Debug.LogWarning($"Blender Importer: Property '{prop.name}' is of type '{propertyType}' on shader '{material.shader.name}', but Blender exported a Float. Skipping property.", material);
+                }
+                break;
+
+            case "Texture":
+                if (propertyType == ShaderUtil.ShaderPropertyType.TexEnv)
+                {
+                    if (string.IsNullOrEmpty(prop.path))
+                    {
+                        Debug.LogWarning($"Blender Importer: Texture property '{prop.name}' has no path. Skipping property.", material);
+                        return;
+                    }
+
+                    Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(prop.path);
+                    if (tex != null)
+                    {
+                        material.SetTexture(propertyName, tex);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Blender Importer: Could not load texture '{prop.path}' for property '{prop.name}'.", material);
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"Blender Importer: Property '{prop.name}' is of type '{propertyType}' on shader '{material.shader.name}', but Blender exported a Texture. Skipping property.", material);
+                }
+                break;
+
+            default:
+                Debug.LogWarning($"Blender Importer: Unknown property type '{prop.type}' for '{prop.name}'. Skipping property.", material);
+                break;
+        }
+    }
+
+    private static bool TryResolveProperty(Material material, string requestedName, out string propertyName, out ShaderUtil.ShaderPropertyType propertyType)
+    {
+        propertyName = requestedName;
+        propertyType = default;
+
+        // If the property doesn't exist, try adding a leading underscore, which is a common Unity convention.
+        if (!material.HasProperty(propertyName))
+        {
+            string underscoredName = "_" + requestedName;
+            if (material.HasProperty(underscoredName))
+            {
+                propertyName = underscoredName;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        int propertyIndex = material.shader.FindPropertyIndex(propertyName);
+        if (propertyIndex < 0)
+        {
+            return false;
+        }
+
+        propertyType = ShaderUtil.GetPropertyType(material.shader, propertyIndex);
+        return true;
+    }
+}

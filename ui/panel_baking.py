@@ -854,6 +854,11 @@ class UNITY_OT_bake_batch(bpy.types.Operator):
 					else:
 						channels = effective_setting.multi_channel_targets
 					
+					# Determine final margin based on the independent margin override
+					final_margin = context.scene.render.bake.margin # Default to global blender bake margin
+					if margin_override and margin_override.use_margin_override:
+						final_margin = margin_override.margin
+
 					if effective_setting.bake_mode == 'EXISTING':
 						image = effective_setting.existing_image
 						if not image:
@@ -888,11 +893,6 @@ class UNITY_OT_bake_batch(bpy.types.Operator):
 								candidate_pass.settings.append(bake_material_setting)
 								continue
 
-					# Determine final margin based on the independent margin override
-					final_margin = context.scene.render.bake.margin # Default to global blender bake margin
-					if margin_override and margin_override.use_margin_override:
-						final_margin = margin_override.margin
-
 					bake_material_setting = self.convert_setting(material, effective_setting, socket, channels, final_margin)
 					pass_settings.append(bake_material_setting)
 					is_pass_effective = True
@@ -915,7 +915,14 @@ class UNITY_OT_bake_batch(bpy.types.Operator):
 
 	@classmethod
 	def poll(cls, context):
-		return context.selected_objects
+		if not context.selected_objects:
+			return False
+		# The button should only be enabled when at least one selected object
+		# actually has an active bake preset to run.
+		return any(
+			any(preset.is_active for preset in obj.unity_bake_settings.presets)
+			for obj in context.selected_objects
+		)
 
 	def execute(self, context):
 		bake_data = bake_utils.BakeData()

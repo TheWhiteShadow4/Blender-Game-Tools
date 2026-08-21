@@ -73,6 +73,20 @@ def copy_texture_and_get_path(tex_node, unity_props, export_path, operator, text
 		return None
 
 
+TEXTURE_NAME_SUFFIXES = ("map", "tex", "texture", "mask", "normal", "noise")
+COLOR_NAME_SUFFIXES = ("color", "colour")
+
+
+def _is_texture_property(name):
+	"""True if the socket name follows Unity's texture-property naming convention."""
+	return name.lower().endswith(TEXTURE_NAME_SUFFIXES)
+
+
+def _is_color_property(name):
+	"""True if the socket name follows Unity's color-property naming convention."""
+	return name.lower().endswith(COLOR_NAME_SUFFIXES)
+
+
 def process_socket(socket, unity_props, export_path, operator, texture_cache):
 	"""Processes a single node socket and returns a dictionary for the JSON property, or None."""
 	prop_name = socket.name
@@ -80,18 +94,21 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache):
 	if prop_name.endswith("_Alpha"):
 		return None
 
-	is_color_convention = prop_name.lower().endswith("color")
-	
 	prop_entry = {"name": prop_name}
+	is_texture_name = _is_texture_property(prop_name)
+	is_color_name = _is_color_property(prop_name)
 
 	# Case 1: Socket is connected to another node
 	if socket.is_linked:
 		from_node = socket.links[0].from_node
 
 		if from_node.type == 'TEX_IMAGE':
-			if is_color_convention:
-				operator.report({'ERROR'}, f"Input '{prop_name}' follows color convention but is connected to a texture.")
-				return None
+			# Textures are the only reliable signal for a texture property. Even if
+			# the name follows the color convention, a connected Image Texture still
+			# represents a texture; the Unity importer resolves the actual shader
+			# property type and will warn if there is a mismatch.
+			if is_color_name:
+				operator.report({'WARNING'}, f"Input '{prop_name}' follows color convention but is connected to a texture.")
 			
 			tex_path = copy_texture_and_get_path(from_node, unity_props, export_path, operator, texture_cache)
 			if tex_path:
@@ -101,26 +118,35 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache):
 				return None # Error was already reported by the helper
 
 		elif from_node.type == 'RGB':
-			operator.report({'ERROR'}, f"Input '{prop_name}' follows texture convention but is connected to an RGB Color node.")
-			return None
+			# Export the constant color value of the RGB node.
+			prop_entry["type"] = "Color"
+			prop_entry["value"] = correct_color(from_node.outputs[0].default_value, unity_props.apply_gamma_correction)
+
 		elif from_node.type == 'VALUE':
-			operator.report({'ERROR'}, f"Input '{prop_name}' follows texture convention but is connected to a Value node.")
-			return None
+			# Export the constant float value of the Value node.
+			prop_entry["type"] = "Float"
+			prop_entry["floatValue"] = from_node.outputs[0].default_value
+
 		else:
 			operator.report({'INFO'}, f"Input '{prop_name}' is connected to an unsupported node type ('{from_node.type}'). It will be ignored.")
 			return None
 	
 	# Case 2: Socket is not connected, use its default value
 	else:
+		if is_texture_name:
+			# A texture property without a connected texture should stay unassigned in
+			# Unity. Exporting a color here would make Unity try to set a color on a
+			# texture property, which logs an error.
+			return None
+
 		if socket.type == 'RGBA':
 			prop_entry["type"] = "Color"
 			color = socket.default_value
 			prop_entry["value"] = correct_color(color, unity_props.apply_gamma_correction)
 
 		elif socket.type == 'VALUE':
-			if is_color_convention:
-				operator.report({'ERROR'}, f"Input '{prop_name}' follows color convention but is a Float, not RGBA.")
-				return None
+			if is_color_name:
+				operator.report({'WARNING'}, f"Input '{prop_name}' follows color convention but is a Float, not RGBA.")
 			prop_entry["type"] = "Float"
 			prop_entry["floatValue"] = socket.default_value
 		
