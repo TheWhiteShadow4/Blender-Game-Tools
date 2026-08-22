@@ -192,7 +192,7 @@ You have a cloth simulation or physics-based surface animation and want to expor
 
 ## Supported Engines
 
-- **Unity** (tested with 2019+)
+- **Unity** (tested with 6.4)
 - **Godot** (experimental, FBX import without material script)
 
 ---
@@ -205,11 +205,12 @@ The baking system requires materials with a BSDF shader as output (Principled BS
 - Mix Shader as output
 - Add Shader as output  
 - Holdout Shader
+- Vector Inputs
 
 ---
 
 ## Support & Development
 
 **Author:** TheWhiteShadow  
-**Version:** 1.3
-**Blender:** 4.4+
+**Version:** 1.4
+**Blender:** 5.2+

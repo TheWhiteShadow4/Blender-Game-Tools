@@ -1,4 +1,4 @@
-# Copyright (c) 2025 TheWhiteShadow
+# Copyright (c) 2026 TheWhiteShadow
 
 # pyright: reportMissingImports=false
 import bpy
@@ -8,8 +8,8 @@ from .ui import panels_3d_view, panel_baking, panel_uv_editor
 bl_info = {
 	"name": "Game Tools",
 	"author": "TheWhiteShadow",
-	"version": (1, 3),
-	"blender": (4, 4, 0),
+	"version": (1, 4),
+	"blender": (5, 2, 0),
 	"description": "Game Helper Tools",
 	"warning": "",
 	"wiki_url": "",
