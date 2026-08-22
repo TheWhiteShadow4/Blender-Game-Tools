@@ -98,13 +98,6 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
 		if (jsonFilesToProcess.Count == 0)
 			return;
 
-		Debug.Log("OnPostprocessAllAssets");
-		foreach (var asset in importedAssets)
-		{
-			Debug.Log($"Process Asset: {asset}");
-		}
-		Debug.Log("Starting ...");
-
         bool assetsChanged = false;
         var fbxPathsToReimport = new HashSet<string>();
 
@@ -195,7 +188,6 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
 				}
 			};
 		}
-        Debug.Log("Complete.");
     }
 
     private static MaterialDataList ReadMaterialList(string jsonPath)
@@ -245,73 +237,122 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
         return null;
     }
 
-    private static string ResolveTexturePath(MaterialProperty prop, TextureData[] textures)
+    private static TextureData ResolveTexturePath(MaterialProperty prop, TextureData[] textures)
     {
         if (textures == null || prop == null || prop.texture < 0 || prop.texture >= textures.Length)
             return null;
 
-        TextureData texture = textures[prop.texture];
-        return texture != null ? texture.path : null;
+       return textures[prop.texture];
     }
 
     private static void SetTextureOnProperty(Material material, string texturePropertyName, MaterialProperty prop, TextureData[] textures)
     {
-        string texPath = ResolveTexturePath(prop, textures);
-        if (string.IsNullOrEmpty(texPath))
-        {
-            Debug.LogWarning($"Blender Importer: Texture property '{prop.name}' has no valid texture reference. Skipping property.", material);
-            return;
-        }
+		TextureData textureData = ResolveTexturePath(prop, textures);
+		if (textureData == null || string.IsNullOrEmpty(textureData.path))
+		{
+			Debug.LogWarning($"Blender Importer: Texture property '{prop.name}' has no valid texture reference. Skipping property.", material);
+			return;
+		}
 
-        Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+        Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(textureData.path);
         if (tex != null)
-        {
-            material.SetTexture(texturePropertyName, tex);
+		{
+			material.SetTexture(texturePropertyName, tex);
+
+			// TODO: Normal Flag auslesen und texture type setzen.
+			/*Shader.GetPropertyFlags(material.shader, 0)
+            if ((prop.propertyFlags & ShaderPropertyFlags.Normal) != 0)
+			{
+				textureData.type = "Normal";
+				}*/
         }
         else
         {
-            Debug.LogWarning($"Blender Importer: Could not load texture '{texPath}' for property '{prop.name}'.", material);
+            Debug.LogWarning($"Blender Importer: Could not load texture '{textureData.path}' for property '{prop.name}'.", material);
         }
     }
 
-    // Applies Unity texture importer settings that are derived from the exported channel usage.
-    // For now this only handles "Alpha is Transparency" when the alpha channel is used.
-    private static void ApplyTextureSettings(TextureData[] textures)
-    {
-        if (textures == null)
-            return;
+	// Applies Unity texture importer settings that are derived from the exported channel usage.
+	// For now this only handles "Alpha is Transparency" when the alpha channel is used.
+	private static void ApplyTextureSettings(TextureData[] textures)
+	{
+		if (textures == null)
+			return;
 
-        foreach (TextureData texture in textures)
-        {
-            if (texture == null || string.IsNullOrEmpty(texture.path))
-                continue;
+		foreach (TextureData texture in textures)
+		{
+			if (texture == null || string.IsNullOrEmpty(texture.path))
+				continue;
 
-            if (!ContainsChannel(texture.channels, "A"))
-                continue;
+			TextureImporter importer = AssetImporter.GetAtPath(texture.path) as TextureImporter;
+			if (importer == null)
+				continue;
 
-            TextureImporter importer = AssetImporter.GetAtPath(texture.path) as TextureImporter;
-            if (importer == null || importer.alphaIsTransparency)
-                continue;
+			bool needRefresh = false;
 
-            importer.alphaIsTransparency = true;
-            EditorUtility.SetDirty(importer);
-            importer.SaveAndReimport();
-        }
-    }
+			needRefresh |= MapTextureType(importer, texture);
+			needRefresh |= MapTextureInterpolation(importer, texture);
+			needRefresh |= MapTextureFlags(importer, texture);
 
-    private static bool ContainsChannel(string[] channels, string channel)
-    {
-        if (channels == null)
-            return false;
+			if (needRefresh)
+			{
+				EditorUtility.SetDirty(importer);
+			}
+			importer.SaveAndReimport();
+		}
+	}
 
-        foreach (string c in channels)
-        {
-            if (string.Equals(c, channel, System.StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
+	private static bool MapTextureType(TextureImporter importer, TextureData texture)
+	{
+		TextureImporterType textureType = importer.textureType;
+		switch (texture.type)
+		{
+			case "Color": textureType = TextureImporterType.Default; break;
+			case "Value": textureType = TextureImporterType.Default; break;
+			case "Normal": textureType = TextureImporterType.NormalMap; break;
+		}
+		if (importer.textureType != textureType)
+		{
+			importer.textureType = textureType;
+			return true;
+		}
+		return false;
+	}
 
-        return false;
-    }
+	private static bool MapTextureInterpolation(TextureImporter importer, TextureData texture)
+	{
+		FilterMode filterMode = importer.filterMode;
+		switch (texture.interpolation)
+		{
+			case "Point": filterMode = FilterMode.Point; break;
+			case "Cubic": filterMode = FilterMode.Trilinear; break;
+			case "Smart": filterMode = FilterMode.Trilinear; break;
+			default: filterMode = FilterMode.Bilinear; break;
+		}
+		if (filterMode != importer.filterMode)
+		{
+			importer.filterMode = filterMode;
+			return true;
+		}
+		return false;
+	}
+
+	private static bool MapTextureFlags(TextureImporter importer, TextureData texture)
+	{
+		bool needRefresh = false;
+		if (texture.type != "Color" && importer.sRGBTexture)
+		{
+			importer.sRGBTexture = false;
+			needRefresh = true;
+		}
+
+		if (texture.type == "Color" && !importer.alphaIsTransparency)
+		{
+			importer.alphaIsTransparency = true;
+			needRefresh = true;
+		}
+		return needRefresh;
+	}
 
     // Finds a texture property whose name shares the given base name and ends with "Map".
     // Used as a best-effort fallback when a Blender texture property maps to a non-texture

@@ -90,15 +90,18 @@ def _is_color_property(name):
 
 SEPARATE_COLOR_CHANNELS = {'Red': 'R', 'Green': 'G', 'Blue': 'B'}
 
-def _classify_texture_type(socket):
+def _classify_texture_type(socket, is_non_color):
 	"""Bestimmt die Textur-Verwendungsart aus dem Blender-Socket-Typ.
 
 	- Value/Int/Boolean-Socket -> "Value" (Daten-Textur).
 	- Color/RGBA-Socket -> "Color". Ob es sich um eine Normal-Map handelt,
 	  entscheidet erst der Importer anhand des Ziel-Shaders.
 	"""
-	if socket and socket.type in {'VALUE', 'INT', 'BOOLEAN'}:
+	if socket and socket.type in {'VECTOR'}:
+		return "Normal"
+	if socket and (is_non_color or socket.type in {'VALUE', 'INT', 'BOOLEAN'}):
 		return "Value"
+
 	return "Color"
 
 
@@ -166,10 +169,11 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache, te
 
 			tex_path = copy_texture_and_get_path(from_node, unity_props, export_path, operator, texture_cache)
 			if tex_path:
+				is_non_color = from_node.image.colorspace_settings.name in {"Linear", "Non-Color", "Raw"}
 				from_socket = socket.links[0].from_socket
 				channels = {'A'} if from_socket.name == 'Alpha' else {'R', 'G', 'B'}
 				prop_entry["type"] = "Texture"
-				prop_entry["texture"] = texture_registry.register(from_node, tex_path, _classify_texture_type(socket), channels)
+				prop_entry["texture"] = texture_registry.register(from_node, tex_path, _classify_texture_type(socket, is_non_color), channels)
 			else:
 				return None # Error was already reported by the helper
 
@@ -205,9 +209,9 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache, te
 				return None
 
 			prop_entry["type"] = "Texture"
-			prop_entry["texture"] = texture_registry.register(tex_node, tex_path, _classify_texture_type(socket), {channel})
+			prop_entry["texture"] = texture_registry.register(tex_node, tex_path, _classify_texture_type(socket, True), {channel})
 			prop_entry["channel"] = channel
-			
+
 		else:
 			operator.report({'INFO'}, f"Input '{prop_name}' is connected to an unsupported node type ('{from_node.type}'). It will be ignored.")
 			return None
