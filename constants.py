@@ -20,6 +20,14 @@ GODOT_AXIS_UP = 'Y'
 # bevor ein neues Material angelegt wird. (Flag wird in die .imp.json geschrieben.)
 SEARCH_PROJECT_MATERIALS = True
 
+# Textur-Einstellungen übertragen (Interpolation/Filter und Wrap-Mode).
+# Der Farbraum (sRGB/Non-Color) wird unabhängig davon immer übertragen.
+TRANSFER_TEXTURE_SETTINGS = True
+
+# Bestehende Texturen in Unity überschreiben (Blender als "Wahrheit") oder
+# manuelle Änderungen in Unity respektieren. (Flag wird in die .imp.json geschrieben.)
+OVERWRITE_TEXTURE_SETTINGS = True
+
 # ===== Tolerances =====
 ROTATION_TOLERANCE = 0.0001
 GAMMA_CORRECTION_FACTOR = 2.2

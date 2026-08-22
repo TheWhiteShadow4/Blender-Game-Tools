@@ -26,7 +26,7 @@ def copy_texture_and_get_path(tex_node, unity_props, export_path, operator, text
 	if not tex_node.image:
 		operator.report({'WARNING'}, f"Texture node '{tex_node.name}' has no image assigned.")
 		return None
-		
+
 	# Duplicate-copy prevention via instance cache
 	cached_path = texture_cache.get(tex_node.image.name)
 	if cached_path:
@@ -46,10 +46,11 @@ def copy_texture_and_get_path(tex_node, unity_props, export_path, operator, text
 			tex_node.image.filepath_raw = dest_path
 			tex_node.image.file_format = 'PNG'
 			tex_node.image.save()
+			operator.report({'INFO'}, f"Internal Texture saved to: '{dest_path}'")
 		else:
 			source_path = tex_node.image.filepath_from_user()
 			if not os.path.exists(source_path):
-				operator.report({'WARNING'}, f"Texture file not found: {source_path}")
+				operator.report({'ERROR'}, f"Texture file not found: {source_path}")
 				return None
 			# Behalte die Original-Endung
 			dest_path = os.path.join(texture_export_dir, os.path.basename(source_path))
@@ -69,7 +70,7 @@ def copy_texture_and_get_path(tex_node, unity_props, export_path, operator, text
 		texture_cache[tex_node.image.name] = relative_texture_path
 		return relative_texture_path
 	except Exception as e:
-		operator.report({'WARNING'}, f"Could not copy or save texture '{tex_node.image.name}': {e}")
+		operator.report({'ERROR'}, f"Could not copy or save texture '{tex_node.image.name}': {e}")
 		return None
 
 
@@ -87,10 +88,63 @@ def _is_color_property(name):
 	return name.lower().endswith(COLOR_NAME_SUFFIXES)
 
 
-def process_socket(socket, unity_props, export_path, operator, texture_cache):
+SEPARATE_COLOR_CHANNELS = {'Red': 'R', 'Green': 'G', 'Blue': 'B'}
+
+def _classify_texture_type(socket):
+	"""Bestimmt die Textur-Verwendungsart aus dem Blender-Socket-Typ.
+
+	- Value/Int/Boolean-Socket -> "Value" (Daten-Textur).
+	- Color/RGBA-Socket -> "Color". Ob es sich um eine Normal-Map handelt,
+	  entscheidet erst der Importer anhand des Ziel-Shaders.
+	"""
+	if socket and socket.type in {'VALUE', 'INT', 'BOOLEAN'}:
+		return "Value"
+	return "Color"
+
+
+class TextureRegistry:
+	"""Sammelt Texturen dedupliziert und baut die JSON-Texturliste auf."""
+
+	def __init__(self):
+		self.textures = []
+		self._by_path = {}
+
+	def register(self, tex_node, tex_path, tex_type, channels):
+		if tex_path in self._by_path:
+			index = self._by_path[tex_path]
+			entry = self.textures[index]
+			merged = set(entry.get("channels", []))
+			merged.update(channels)
+			entry["channels"] = sorted(merged)
+			return index
+
+		entry = _build_texture_entry(tex_node, tex_path, tex_type, channels)
+		index = len(self.textures)
+		self.textures.append(entry)
+		self._by_path[tex_path] = index
+		return index
+
+
+def _build_texture_entry(tex_node, tex_path, tex_type, channels):
+	"""Baut den deduplizierten Textur-Eintrag inkl. Einstellungen."""
+	entry = {
+		"path": tex_path,
+		"type": tex_type,
+		"channels": sorted(set(channels)),
+	}
+
+	# Interpolation/Filter und Wrap-Mode nur übertragen, wenn aktiviert.
+	if constants.TRANSFER_TEXTURE_SETTINGS:
+		entry["interpolation"] = tex_node.interpolation
+		entry["wrapMode"] = tex_node.extension
+
+	return entry
+
+
+def process_socket(socket, unity_props, export_path, operator, texture_cache, texture_registry):
 	"""Processes a single node socket and returns a dictionary for the JSON property, or None."""
 	prop_name = socket.name
-	
+
 	if prop_name.endswith("_Alpha"):
 		return None
 
@@ -109,11 +163,13 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache):
 			# property type and will warn if there is a mismatch.
 			if is_color_name:
 				operator.report({'WARNING'}, f"Input '{prop_name}' follows color convention but is connected to a texture.")
-			
+
 			tex_path = copy_texture_and_get_path(from_node, unity_props, export_path, operator, texture_cache)
 			if tex_path:
+				from_socket = socket.links[0].from_socket
+				channels = {'A'} if from_socket.name == 'Alpha' else {'R', 'G', 'B'}
 				prop_entry["type"] = "Texture"
-				prop_entry["path"] = tex_path
+				prop_entry["texture"] = texture_registry.register(from_node, tex_path, _classify_texture_type(socket), channels)
 			else:
 				return None # Error was already reported by the helper
 
@@ -127,10 +183,35 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache):
 			prop_entry["type"] = "Float"
 			prop_entry["floatValue"] = from_node.outputs[0].default_value
 
+		elif from_node.type == 'SEPARATE_COLOR':
+			# The input is fed by one of the Separate Color outputs (Red/Green/Blue).
+			# Record the source texture and the used channel so Unity can rebuild it.
+			from_socket = socket.links[0].from_socket
+			channel = SEPARATE_COLOR_CHANNELS.get(from_socket.name, from_socket.name)
+
+			# Ensure the Separate Color input is a texture.
+			color_input = from_node.inputs.get('Color')
+			if not color_input or not color_input.is_linked:
+				operator.report({'WARNING'}, f"Input '{prop_name}' uses SEPARATE_COLOR but its Color input is not connected.")
+				return None
+
+			tex_node = color_input.links[0].from_node
+			if not tex_node or tex_node.type != 'TEX_IMAGE':
+				operator.report({'WARNING'}, f"Input '{prop_name}' uses SEPARATE_COLOR but its input is not a texture ('{tex_node.type if tex_node else 'None'}').")
+				return None
+
+			tex_path = copy_texture_and_get_path(tex_node, unity_props, export_path, operator, texture_cache)
+			if not tex_path:
+				return None
+
+			prop_entry["type"] = "Texture"
+			prop_entry["texture"] = texture_registry.register(tex_node, tex_path, _classify_texture_type(socket), {channel})
+			prop_entry["channel"] = channel
+			
 		else:
 			operator.report({'INFO'}, f"Input '{prop_name}' is connected to an unsupported node type ('{from_node.type}'). It will be ignored.")
 			return None
-	
+
 	# Case 2: Socket is not connected, use its default value
 	else:
 		if is_texture_name:
@@ -144,12 +225,12 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache):
 			color = socket.default_value
 			prop_entry["value"] = correct_color(color, unity_props.apply_gamma_correction)
 
-		elif socket.type == 'VALUE':
+		elif socket.type in {'VALUE', 'INT', 'BOOLEAN'}:
 			if is_color_name:
 				operator.report({'WARNING'}, f"Input '{prop_name}' follows color convention but is a Float, not RGBA.")
 			prop_entry["type"] = "Float"
-			prop_entry["floatValue"] = socket.default_value
-		
+			prop_entry["floatValue"] = float(socket.default_value)
+
 		else: # Other unlinked socket types we don't handle
 			return None
 
@@ -161,6 +242,7 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 	unity_props = context.scene.unity_tool_properties
 	materials_data = []
 	texture_cache = {}
+	texture_registry = TextureRegistry()
 
 	# Iterate over every material slot on the object
 	for mat_slot in obj.material_slots:
@@ -178,7 +260,7 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 		if not (output_node and output_node.inputs['Surface'].links):
 			operator.report({'INFO'}, f"Material '{mat.name}' has no valid output connection, skipping")
 			continue
-		
+
 		interface_node = output_node.inputs['Surface'].links[0].from_node
 
 		# Check if this is a supported shader node (with node_tree attribute)
@@ -200,7 +282,7 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 
 		try:
 			for socket in interface_node.inputs:
-				prop_entry = process_socket(socket, unity_props, export_path, operator, texture_cache)
+				prop_entry = process_socket(socket, unity_props, export_path, operator, texture_cache, texture_registry)
 				if prop_entry:
 					material_data["properties"].append(prop_entry)
 		except Exception as e:
@@ -218,9 +300,10 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 		with open(json_filepath, 'w') as f:
 			json.dump({
 				"materials": materials_data,
+				"textures": texture_registry.textures,
 				"searchProjectMaterials": constants.SEARCH_PROJECT_MATERIALS,
+				"overwriteTextureSettings": constants.OVERWRITE_TEXTURE_SETTINGS,
 			}, f, indent=4)
 		operator.report({'INFO'}, f"Exported material data for {len(materials_data)} materials.")
 	except Exception as e:
 		operator.report({'WARNING'}, f"Could not write material json: {e}")
-

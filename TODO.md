@@ -1,6 +1,8 @@
 # TODO
 
-- [ ] Blender-Addon-Settings anlegen, um Importer-Flags (aktuell `SEARCH_PROJECT_MATERIALS` als Konstante) konfigurierbar zu machen.
+- [ ] Blender-Addon-Settings anlegen.
+	- [ ] Importer-Flags (aktuell `SEARCH_PROJECT_MATERIALS` als Konstante) konfigurierbar zu machen.
+	- [ ] Umgang mit internen Bildern. Sollen diese Zwischengespeichert werden?
 
 # Bugs
 - [ ] Bake presets Button wird nicht deaktiviert, wenn keine Presets aktiv sind

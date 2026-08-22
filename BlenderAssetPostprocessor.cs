@@ -2,7 +2,6 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 using System.IO;
-using System.Linq;
 using System.Collections.Generic;
 
 // Helper classes for deserializing the JSON
@@ -13,7 +12,8 @@ public class MaterialProperty
     public string type;
     public float[] value; // For Color
     public float floatValue; // For a single Float
-    public string path; // For Texture path
+    public int texture; // Index into the top-level textures list (for Texture type)
+    public string channel; // Optional channel (R/G/B) for texture channel references
 }
 
 [System.Serializable]
@@ -25,10 +25,22 @@ public class MaterialData
 }
 
 [System.Serializable]
+public class TextureData
+{
+    public string path;
+    public string type;
+    public string interpolation;
+    public string wrapMode;
+    public string[] channels;
+}
+
+[System.Serializable]
 public class MaterialDataList
 {
     public MaterialData[] materials;
+    public TextureData[] textures;
     public bool searchProjectMaterials;
+    public bool overwriteTextureSettings;
 }
 
 public class BlenderAssetPostprocessor : AssetPostprocessor
@@ -36,7 +48,7 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
     // Runs BEFORE the model is imported. This is the correct place to set import settings
     // and to remap the FBX material slots to our external materials.
     void OnPreprocessModel()
-    {
+	{
         if (!(assetImporter is ModelImporter modelImporter))
             return;
 
@@ -73,7 +85,7 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
     // Runs after all assets have been imported. We create/update the external materials
     // here (which is safe), then schedule a reimport so OnPreprocessModel applies the remaps.
     static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
-    {
+	{
         var jsonFilesToProcess = new List<string>();
         foreach (string path in importedAssets)
         {
@@ -83,8 +95,15 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             }
         }
 
-        if (jsonFilesToProcess.Count == 0)
-            return;
+		if (jsonFilesToProcess.Count == 0)
+			return;
+
+		Debug.Log("OnPostprocessAllAssets");
+		foreach (var asset in importedAssets)
+		{
+			Debug.Log($"Process Asset: {asset}");
+		}
+		Debug.Log("Starting ...");
 
         bool assetsChanged = false;
         var fbxPathsToReimport = new HashSet<string>();
@@ -115,38 +134,40 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
 
                 Material material = ResolveExistingMaterial(materialData, materialList.searchProjectMaterials, materialsDirectory);
 
-                if (material == null)
-                {
-                    // Unsupported materials (no shader) can only be reused, never created.
-                    if (string.IsNullOrEmpty(materialData.shaderName))
-                    {
-                        Debug.LogWarning($"Blender Importer: Material '{materialData.materialName}' uses unsupported shader and no existing material found. Skipping.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
-                        continue;
-                    }
+				if (material == null)
+				{
+					// Unsupported materials (no shader) can only be reused, never created.
+					if (string.IsNullOrEmpty(materialData.shaderName))
+					{
+						Debug.LogWarning($"Blender Importer: Material '{materialData.materialName}' uses unsupported shader and no existing material found. Skipping.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
+						continue;
+					}
 
-                    Shader shader = Shader.Find(materialData.shaderName);
-                    if (shader == null)
-                    {
-                        Debug.LogWarning($"Blender Importer: Shader '{materialData.shaderName}' not found. Skipping material '{materialData.materialName}'.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
-                        continue;
-                    }
+					Shader shader = Shader.Find(materialData.shaderName);
+					if (shader == null)
+					{
+						Debug.LogWarning($"Blender Importer: Shader '{materialData.shaderName}' not found. Skipping material '{materialData.materialName}'.", AssetDatabase.LoadAssetAtPath<Object>(jsonPath));
+						continue;
+					}
 
-                    Debug.Log($"Blender Importer: Creating new material '{materialData.materialName}'.");
-                    material = new Material(shader);
-                    AssetDatabase.CreateAsset(material, materialPath);
-                }
+					Debug.Log($"Blender Importer: Creating new material '{materialData.materialName}'.");
+					material = new Material(shader);
+					AssetDatabase.CreateAsset(material, materialPath);
+				}
 
                 if (materialData.properties != null)
                 {
                     foreach (MaterialProperty prop in materialData.properties)
                     {
-                        ApplyProperty(material, prop);
+                        ApplyProperty(material, prop, materialList.textures);
                     }
                 }
 
                 EditorUtility.SetDirty(material);
                 assetsChanged = true;
             }
+
+            ApplyTextureSettings(materialList.textures);
 
             fbxPathsToReimport.Add(fbxPath);
         }
@@ -156,24 +177,25 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             AssetDatabase.SaveAssets();
         }
 
-        // Reimport the affected models on the next editor tick. Remapping happens in
-        // OnPreprocessModel; doing the reimport synchronously from here can trigger
-        // "AssetImporter is referencing an asset from the previous import".
-        foreach (string fbxPath in fbxPathsToReimport)
-        {
-            string path = fbxPath;
-            EditorApplication.delayCall += () =>
-            {
-                AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+		// Reimport the affected models on the next editor tick. Remapping happens in
+		// OnPreprocessModel; doing the reimport synchronously from here can trigger
+		// "AssetImporter is referencing an asset from the previous import".
+		foreach (string fbxPath in fbxPathsToReimport)
+		{
+			string path = fbxPath;
+			EditorApplication.delayCall += () =>
+			{
+				AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
 
-                // The sidecar JSON has now been consumed by OnPreprocessModel; clean it up.
-                string jsonPath = path + ".imp.json";
-                if (File.Exists(jsonPath))
-                {
-                    AssetDatabase.DeleteAsset(jsonPath);
-                }
-            };
-        }
+				// The sidecar JSON has now been consumed by OnPreprocessModel; clean it up.
+				string jsonPath = path + ".imp.json";
+				if (File.Exists(jsonPath))
+				{
+					AssetDatabase.DeleteAsset(jsonPath);
+				}
+			};
+		}
+        Debug.Log("Complete.");
     }
 
     private static MaterialDataList ReadMaterialList(string jsonPath)
@@ -190,13 +212,17 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
     private static Material ResolveExistingMaterial(MaterialData materialData, bool searchProject, string materialsDirectory)
     {
         string materialPath = Path.Combine(materialsDirectory, materialData.materialName + ".mat").Replace('\\', '/');
-        Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-        if (material != null)
-            return material;
+		Material material = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
 
-        // Unsupported shaders can never be created, so always fall back to a name search.
-        if (searchProject || string.IsNullOrEmpty(materialData.shaderName))
-            return FindMaterialByName(materialData.materialName);
+		// Unsupported shaders can never be created, so always fall back to a name search.
+		if (material == null && (searchProject || string.IsNullOrEmpty(materialData.shaderName)))
+			material = FindMaterialByName(materialData.materialName);
+
+		if (material != null)
+		{
+			Debug.Log($"Use existing Material: '{materialData.materialName}'.");
+			return material;
+		}
 
         return null;
     }
@@ -206,8 +232,11 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
         string[] guids = AssetDatabase.FindAssets($"{materialName} t:Material");
         foreach (string guid in guids)
         {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+			string path = AssetDatabase.GUIDToAssetPath(guid);
+			// Es kann sein, dass hier eine Referenz und nicht das Asset gefunden wird.
+			if (!path.EndsWith(".mat")) continue;
+
+			Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material != null && material.name == materialName)
             {
                 return material;
@@ -216,7 +245,104 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
         return null;
     }
 
-    private static void ApplyProperty(Material material, MaterialProperty prop)
+    private static string ResolveTexturePath(MaterialProperty prop, TextureData[] textures)
+    {
+        if (textures == null || prop == null || prop.texture < 0 || prop.texture >= textures.Length)
+            return null;
+
+        TextureData texture = textures[prop.texture];
+        return texture != null ? texture.path : null;
+    }
+
+    private static void SetTextureOnProperty(Material material, string texturePropertyName, MaterialProperty prop, TextureData[] textures)
+    {
+        string texPath = ResolveTexturePath(prop, textures);
+        if (string.IsNullOrEmpty(texPath))
+        {
+            Debug.LogWarning($"Blender Importer: Texture property '{prop.name}' has no valid texture reference. Skipping property.", material);
+            return;
+        }
+
+        Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+        if (tex != null)
+        {
+            material.SetTexture(texturePropertyName, tex);
+        }
+        else
+        {
+            Debug.LogWarning($"Blender Importer: Could not load texture '{texPath}' for property '{prop.name}'.", material);
+        }
+    }
+
+    // Applies Unity texture importer settings that are derived from the exported channel usage.
+    // For now this only handles "Alpha is Transparency" when the alpha channel is used.
+    private static void ApplyTextureSettings(TextureData[] textures)
+    {
+        if (textures == null)
+            return;
+
+        foreach (TextureData texture in textures)
+        {
+            if (texture == null || string.IsNullOrEmpty(texture.path))
+                continue;
+
+            if (!ContainsChannel(texture.channels, "A"))
+                continue;
+
+            TextureImporter importer = AssetImporter.GetAtPath(texture.path) as TextureImporter;
+            if (importer == null || importer.alphaIsTransparency)
+                continue;
+
+            importer.alphaIsTransparency = true;
+            EditorUtility.SetDirty(importer);
+            importer.SaveAndReimport();
+        }
+    }
+
+    private static bool ContainsChannel(string[] channels, string channel)
+    {
+        if (channels == null)
+            return false;
+
+        foreach (string c in channels)
+        {
+            if (string.Equals(c, channel, System.StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    // Finds a texture property whose name shares the given base name and ends with "Map".
+    // Used as a best-effort fallback when a Blender texture property maps to a non-texture
+    // shader property (e.g. "Metallic" -> "_MetallicGlossMap").
+    private static string FindTextureMapProperty(Shader shader, string propertyName)
+    {
+        if (shader == null || string.IsNullOrEmpty(propertyName))
+            return null;
+
+        string baseName = propertyName.TrimStart('_');
+
+        int count = shader.GetPropertyCount();
+        for (int i = 0; i < count; i++)
+        {
+            if (shader.GetPropertyType(i) != ShaderPropertyType.Texture)
+                continue;
+
+            string name = shader.GetPropertyName(i);
+            string trimmed = name.TrimStart('_');
+
+            if (trimmed.EndsWith("Map", System.StringComparison.OrdinalIgnoreCase) &&
+                trimmed.StartsWith(baseName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return name;
+            }
+        }
+
+        return null;
+    }
+
+    private static void ApplyProperty(Material material, MaterialProperty prop, TextureData[] textures)
     {
         if (material == null || prop == null || string.IsNullOrEmpty(prop.name))
         {
@@ -266,25 +392,24 @@ public class BlenderAssetPostprocessor : AssetPostprocessor
             case "Texture":
                 if (propertyType == ShaderPropertyType.Texture)
                 {
-                    if (string.IsNullOrEmpty(prop.path))
-                    {
-                        Debug.LogWarning($"Blender Importer: Texture property '{prop.name}' has no path. Skipping property.", material);
-                        return;
-                    }
-
-                    Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(prop.path);
-                    if (tex != null)
-                    {
-                        material.SetTexture(propertyName, tex);
-                    }
-                    else
-                    {
-                        Debug.LogWarning($"Blender Importer: Could not load texture '{prop.path}' for property '{prop.name}'.", material);
-                    }
+                    SetTextureOnProperty(material, propertyName, prop, textures);
                 }
                 else
                 {
-                    Debug.LogWarning($"Blender Importer: Property '{prop.name}' is of type '{propertyType}' on shader '{material.shader.name}', but Blender exported a Texture. Skipping property.", material);
+                    // Best-effort fallback: the Blender property is a texture, but the
+                    // matching shader property is not (e.g. a float/range). Look for a
+                    // texture property with a "Map" suffix that shares the base name
+                    // (e.g. "Metallic" -> "_MetallicGlossMap").
+                    string texturePropertyName = FindTextureMapProperty(material.shader, propertyName);
+                    if (!string.IsNullOrEmpty(texturePropertyName))
+                    {
+                        Debug.LogWarning($"Blender Importer: Property '{prop.name}' is of type '{propertyType}' on shader '{material.shader.name}', but Blender exported a Texture. Remapping to texture property '{texturePropertyName}'.", material);
+                        SetTextureOnProperty(material, texturePropertyName, prop, textures);
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Blender Importer: Property '{prop.name}' is of type '{propertyType}' on shader '{material.shader.name}', but Blender exported a Texture. Skipping property.", material);
+                    }
                 }
                 break;
 
