@@ -31,7 +31,6 @@ public class TextureData
     public string type;
     public string interpolation;
     public string wrapMode;
-    public string[] channels;
 }
 
 [System.Serializable]

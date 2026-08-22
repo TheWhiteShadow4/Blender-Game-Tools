@@ -112,28 +112,24 @@ class TextureRegistry:
 		self.textures = []
 		self._by_path = {}
 
-	def register(self, tex_node, tex_path, tex_type, channels):
+	def register(self, tex_node, tex_path, tex_type):
 		if tex_path in self._by_path:
 			index = self._by_path[tex_path]
 			entry = self.textures[index]
-			merged = set(entry.get("channels", []))
-			merged.update(channels)
-			entry["channels"] = sorted(merged)
 			return index
 
-		entry = _build_texture_entry(tex_node, tex_path, tex_type, channels)
+		entry = _build_texture_entry(tex_node, tex_path, tex_type)
 		index = len(self.textures)
 		self.textures.append(entry)
 		self._by_path[tex_path] = index
 		return index
 
 
-def _build_texture_entry(tex_node, tex_path, tex_type, channels):
+def _build_texture_entry(tex_node, tex_path, tex_type):
 	"""Baut den deduplizierten Textur-Eintrag inkl. Einstellungen."""
 	entry = {
 		"path": tex_path,
 		"type": tex_type,
-		"channels": sorted(set(channels)),
 	}
 
 	# Interpolation/Filter und Wrap-Mode nur übertragen, wenn aktiviert.
@@ -171,9 +167,8 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache, te
 			if tex_path:
 				is_non_color = from_node.image.colorspace_settings.name in {"Linear", "Non-Color", "Raw"}
 				from_socket = socket.links[0].from_socket
-				channels = {'A'} if from_socket.name == 'Alpha' else {'R', 'G', 'B'}
 				prop_entry["type"] = "Texture"
-				prop_entry["texture"] = texture_registry.register(from_node, tex_path, _classify_texture_type(socket, is_non_color), channels)
+				prop_entry["texture"] = texture_registry.register(from_node, tex_path, _classify_texture_type(socket, is_non_color))
 			else:
 				return None # Error was already reported by the helper
 
@@ -209,7 +204,7 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache, te
 				return None
 
 			prop_entry["type"] = "Texture"
-			prop_entry["texture"] = texture_registry.register(tex_node, tex_path, _classify_texture_type(socket, True), {channel})
+			prop_entry["texture"] = texture_registry.register(tex_node, tex_path, _classify_texture_type(socket, True))
 			prop_entry["channel"] = channel
 
 		else:

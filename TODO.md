@@ -3,11 +3,13 @@
 - [ ] Blender-Addon-Settings anlegen.
 	- [ ] Importer-Flags (aktuell `SEARCH_PROJECT_MATERIALS` als Konstante) konfigurierbar zu machen.
 	- [ ] Umgang mit internen Bildern. Sollen diese Zwischengespeichert werden?
+	- [ ] Pfad vom BlenderAssetProcessor konfigurierbar machen
 
 # Bugs
-- [ ] Bake presets Button wird nicht deaktiviert, wenn keine Presets aktiv sind
+- [x] Bake presets Button wird nicht deaktiviert, wenn keine Presets aktiv sind
 - [x] Channel Auswahl in Single Channel Sockets ist mehrzeilig und leer.
 - [x] Mesh Symmetry Deaktivierung im Rotation Fix - API für Blender 4.5+ unbekannt (Automerge bereits implementiert)
+- [ ] Baker wirft Fehler, wenn er einen Vector Eingang backen soll.
 
 
 - [x] C#-Skript im Unity-Projekt bei jeder Ausführung aktualisieren, um bei Add-on-Updates konsistent zu sein.
@@ -15,10 +17,6 @@
 - [x] Blender Bake Optionen wie bleeding, clear Image
 - [ ] Nodes besser ausrichten/neu anordnen
 
-
-## Nice to Have
-
-- [ ] Pfad vom BlenderAssetProcessor konfigurierbar machen
 
 ## Animation Rigger
 - [x] Ausgewählte Verts/Faces oder eine Vertex Group als Maske für die Bone-Verteilung verwenden.
