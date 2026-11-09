@@ -1,0 +1,53 @@
+{
+    "materials": [
+        {
+            "materialName": "Mat_Suzanne1",
+            "shaderName": "Universal Render Pipeline/Lit",
+            "properties": [
+                {
+                    "name": "Transparent",
+                    "type": "Float",
+                    "floatValue": 1.0
+                },
+                {
+                    "name": "Cutoff",
+                    "type": "Float",
+                    "floatValue": 0.0
+                },
+                {
+                    "name": "BaseColor",
+                    "type": "Color",
+                    "value": [
+                        1.0,
+                        0.5377588272094727,
+                        0.18144920468330383,
+                        1.0
+                    ]
+                },
+                {
+                    "name": "Metallic",
+                    "type": "Float",
+                    "floatValue": 0.0
+                },
+                {
+                    "name": "Smoothness",
+                    "type": "Float",
+                    "floatValue": 0.4000000059604645
+                },
+                {
+                    "name": "EmissionColor",
+                    "type": "Color",
+                    "value": [
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                }
+            ]
+        }
+    ],
+    "textures": [],
+    "searchProjectMaterials": true,
+    "overwriteTextureSettings": true
+}
