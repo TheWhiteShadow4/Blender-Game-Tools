@@ -212,5 +212,10 @@ The baking system requires materials with a BSDF shader as output (Principled BS
 ## Support & Development
 
 **Author:** TheWhiteShadow  
-**Version:** 1.4
+**Version:** 1.4  
 **Blender:** 5.2+
+
+### Testing
+
+Automatisierte Tests (Blender 5.2, Background-Modus):  
+→ [tests/README.md](tests/README.md)
