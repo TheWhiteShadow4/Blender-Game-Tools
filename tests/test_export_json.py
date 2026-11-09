@@ -96,9 +96,15 @@ def main():
     print(f"    Materialien: {len(golden.get('materials', []))}")
     print(f"    Texturen: {len(golden.get('textures', []))}")
 
-    # --- Vorherige Export-Dateien aufräumen ---
+    # --- Vorherige Export-Dateien aufräumen (nur Dateien, kein rmtree – Windows-Locks) ---
     if os.path.isdir(OUTPUT_FBX_DIR):
-        shutil.rmtree(OUTPUT_FBX_DIR)
+        for f in os.listdir(OUTPUT_FBX_DIR):
+            fpath = os.path.join(OUTPUT_FBX_DIR, f)
+            if os.path.isfile(fpath):
+                try:
+                    os.remove(fpath)
+                except OSError:
+                    pass  # Datei gesperrt – Quick-Export überschreibt sie ohnehin
 
     # --- Addon laden und registrieren ---
     print("\n--- Addon laden ---")
