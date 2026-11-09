@@ -18,7 +18,7 @@ blender --background --python tests/test_export_json.py
 blender --background --python tests/test_export_json.py
 ```
 
-> **Hinweis:** Die JSON-Export-Tests benötigen `Shaders.blend` im Projekt-Root.
+> **Hinweis:** `test_export_json.py` lädt `Shaders.blend` selbst – kein CLI-Argument nötig.
 > Die Unity-Mock-Validierung braucht `tests/unity_mock/` (liegt im Repo).
 
 ## Test-Übersicht

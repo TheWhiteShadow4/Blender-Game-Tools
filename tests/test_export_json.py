@@ -106,6 +106,15 @@ def main():
                 except OSError:
                     pass  # Datei gesperrt – Quick-Export überschreibt sie ohnehin
 
+    # --- Shaders.blend laden (Test lädt die Scene selbst, nicht via CLI) ---
+    print("\n--- Scene laden ---")
+    import bpy
+
+    # Aktive Scene zurücksetzen (Falls Blender mit anderer Scene gestartet wurde)
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.wm.open_mainfile(filepath=BLEND_FILE)
+    check(bpy.data.objects.get("Suzanne") is not None, "Shaders.blend geladen (Suzanne gefunden)")
+
     # --- Addon laden und registrieren ---
     print("\n--- Addon laden ---")
     import importlib.util
@@ -120,8 +129,6 @@ def main():
     check(True, "Addon geladen und registriert")
 
     # --- Scene einrichten ---
-    import bpy
-
     print("\n--- Scene einrichten ---")
     props = bpy.context.scene.unity_tool_properties
     props.engine_project_path = MOCK_UNITY_DIR
