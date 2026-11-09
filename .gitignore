@@ -2,3 +2,7 @@
 /**.zip
 **__pycache__/
 /blender-main/
+tests/__pycache__/
+tests/output/
+tests/unity_mock/Assets/*
+!tests/unity_mock/Assets/.gitkeep
