@@ -10,9 +10,10 @@ Automatisierte Tests für das Blender-Game-Tools-Addon. Läuft in Blender 5.2 (B
 ## Ausführen
 
 ```bash
-# Alle Tests (Smoke + Export)
+# Alle Tests
 blender --background --python tests/test_smoke.py
 blender --background --python tests/test_export_json.py
+blender --background tests/Test.blend --python tests/test_bake.py
 
 # Einzelner Test
 blender --background --python tests/test_export_json.py
@@ -23,10 +24,11 @@ blender --background --python tests/test_export_json.py
 
 ## Test-Übersicht
 
-| Test | Date | Prüft |
-|------|------|-------|
+| Test | Datei | Prüft |
+|------|-------|-------|
 | **Smoke-Test** | `test_smoke.py` | Addon-Laden, 6 Panels, 2 PropertyGroups, Unity-Mock, Engine-Erkennung, Property-Defaults |
 | **JSON-Export** | `test_export_json.py` | Quick-Export mit `Shaders.blend`, JSON-Struktur, Golden-File-Abgleich |
+| **Bake-Test** | `test_bake.py` | Baking-Feature mit `Test.blend` (Preset-Erkennung, Batch-Bake, Bild-Ausgabe) |
 
 ## Golden-File-Workflow
 
@@ -70,6 +72,10 @@ import bpy, sys, os, json, shutil
 tests/
 ├── test_smoke.py              # Smoke-Test (17 Assertions)
 ├── test_export_json.py        # JSON-Export-Test (16 Assertions)
+├── test_bake.py               # Bake-Test (Preset-Erkennung, Batch-Bake, Bild-Ausgabe)
+├── Test.blend                 # Bake-Test-Setup (2 Texturen: ColorMap, Smoothness)
+├── ColorMap.png               # Eingabetextur für den Bake-Test
+├── Smoothness.png             # Eingabetextur für den Bake-Test
 ├── golden/
 │   └── Suzanne.fbx.imp.json   # Referenz-JSON (manuell verifiziert)
 └── unity_mock/                # Mock-Unity-Projekt
@@ -81,5 +87,4 @@ tests/
 
 ## Geplante Tests (noch nicht vorhanden)
 
-- **Baker-Test:** Einfaches Cycles-Bake + Vector-Bug-Reproduktion
 - **Cloth-Rigger-Test:** Grundlegendes Rigging eines Grid-Mesh

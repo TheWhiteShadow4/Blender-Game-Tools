@@ -4,5 +4,7 @@
 /blender-main/
 tests/__pycache__/
 tests/output/
+tests/bake_output/
+tests/*.blend1
 tests/unity_mock/Assets/*
 !tests/unity_mock/Assets/.gitkeep
