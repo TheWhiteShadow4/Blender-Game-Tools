@@ -1,6 +1,6 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
-import traceback
+import contextlib
 from . import bake_utils
 from .. import constants
 from . import alpha_combiner
@@ -30,16 +30,9 @@ class Baker():
 
 	def bake(self):
 		self.warnings = []
-		self.objects = []
+		self.objects = list(bpy.context.selected_objects)
 
-		for obj in bpy.context.selected_objects:
-			self.objects.append(obj)
-
-		# globalen State speichern
-		preserved_global_state = self._preserve_global_state()
-		next(preserved_global_state)
-
-		try:
+		with self._preserve_global_state():
 			# States setzen
 			bpy.context.scene.render.engine = 'CYCLES'
 			bpy.context.scene.render.bake.use_clear = False
@@ -52,6 +45,7 @@ class Baker():
 				print(f"Bake Pass {bake_pass.index}")
 				self.bake_pass(bake_pass)
 
+			# Alpha-Kombinierung (Post-Processing)
 			alpha_results = self._combine_alpha_channels()
 
 			# Zusammenfassung der Ergebnisse
@@ -60,31 +54,24 @@ class Baker():
 
 			if alpha_results:
 				if fail_count > 0:
-					print(f"Summary: {success_count} successful, {fail_count} failed")
+					print(f"ERROR: {fail_count} alpha combination(s) failed:")
 					for success, message in alpha_results:
 						if not success:
-							print(f"  ERROR: {message}")
+							print(f"  {message}")
 				elif success_count > 0:
 					print(f"Summary: {success_count} alpha channel(s) combined successfully")
 			else:
 				print("No alpha channels to combine")
 
-		except Exception as e:
-			print(traceback.format_exc())
-			print({'ERROR'}, f"{e}")
-			return {'CANCELLED'}
-
-		finally:
-			# State wiederherstellen
-			next(preserved_global_state)
-			if self.dummy_image:
-				bpy.data.images.remove(self.dummy_image)
+		# Cleanup: Dummy-Image entfernen (immer, auch bei Fehler)
+		if self.dummy_image:
+			bpy.data.images.remove(self.dummy_image)
 
 		return {'FINISHED'}
 
 	def bake_pass(self, bake_pass: bake_utils.BakePass):
 		try:
-			print({'INFO'}, f"Prepare '{bake_pass.object.name}'.")
+			print(f"Prepare '{bake_pass.object.name}'.")
 			self._collect_materials_for_pass(bake_pass, self.diffuse_pipeline)
 			for material_metadata in self.material_metadata.values():
 				material_metadata.prepare()
@@ -105,36 +92,33 @@ class Baker():
 					material_metadata.cleanup()
 
 		except Exception as e:
-			print("Führe Rollback aus.")
+			print(f"ERROR: Bake failed: {e}")
 			for bake_socket in self.bake_sockets:
 				bake_socket.rollback()
 			for material_metadata in self.material_metadata.values():
 				material_metadata.cleanup()
 			raise e
 
-
+	@contextlib.contextmanager
 	def _preserve_global_state(self):
 		'''
-		Speichert den aktiven State.
+		Speichert den aktiven State und stellt ihn nach dem Block wieder her.
 		'''
 		prev_hide_render = {obj: obj.hide_render for obj in self.objects}
-
 		original_engine = bpy.context.scene.render.engine
 		original_use_clear = bpy.context.scene.render.bake.use_clear
 
-		print({'INFO'}, f"State gespeichert.")
-		# Hier wird die Funktion pausiert und der Bake durchgeführt.
-		yield
+		print("State gespeichert.")
+		try:
+			yield
+		finally:
+			bpy.context.scene.render.bake.use_clear = original_use_clear
+			bpy.context.scene.render.engine = original_engine
 
-		# State wiederherstellen
-		bpy.context.scene.render.bake.use_clear = original_use_clear
-		bpy.context.scene.render.engine = original_engine
+			for obj, prev in prev_hide_render.items():
+				obj.hide_render = prev
 
-		for obj, prev in prev_hide_render.items():
-			obj.hide_render = prev
-
-		print({'INFO'}, f"State wiederhergestellt.")
-		yield
+			print("State wiederhergestellt.")
 
 	def _combine_alpha_channels(self):
 		"""
@@ -150,7 +134,7 @@ class Baker():
 		processed_images = set()
 
 		for merge_plan in self.bake_data.alpha_merge_plans:
-			# <Hole die Images nach dem Baking aus den Settings. Wenn die nicht da sind, ist beim Baking etwas schief gelaufen.
+			# Hole die Images nach dem Baking aus den Settings. Wenn die nicht da sind, ist beim Baking etwas schief gelaufen.
 			main_image = merge_plan.main_setting.image
 			if not main_image:
 				raise ValueError(f"Main image not found for {merge_plan.main_setting.material.name} {merge_plan.main_setting.input_socket.name}")
@@ -170,8 +154,12 @@ class Baker():
 			# Finde den Socket im Interface Node
 			mat = merge_plan.main_setting.material
 			interface_node = get_interface_node(mat)
+			if not interface_node:
+				continue
 			alpha_socket_name = merge_plan.alpha_setting.input_socket.name
 			alpha_socket = interface_node.inputs.get(alpha_socket_name)
+			if not alpha_socket:
+				continue
 
 			# Aktualisiere Node-Verbindungen: Alpha-Socket soll auf Haupttextur zeigen
 			metadata = self.material_metadata[mat]
@@ -185,7 +173,7 @@ class Baker():
 	def _collect_materials_for_pass(self, bake_pass, diffuse_pipeline):
 		'''
 		Sammelt alle Materialien aus den ausgewählten Objekten.
-		Jedes Material muss nur einaml verarbeitet werden.
+		Jedes Material muss nur einmal verarbeitet werden.
 		'''
 		self.bake_sockets = []
 		for setting in bake_pass.settings:
@@ -196,7 +184,7 @@ class Baker():
 			image: bpy.types.Image = setting.image
 			if setting.is_dummy():
 				image = self.get_or_create_dummy_image()
-			elif image == None:
+			elif image is None:
 				image = bake_pass.initialize_image(setting)
 
 			v_offset = (len(self.bake_data.passes) / 2 - bake_pass.index) * _NODE_OFFSET_VERTICAL
@@ -205,7 +193,7 @@ class Baker():
 
 			bake_material = BakeMaterial(mat, setting.input_socket, setting.uv_map_name, image_node, setting.channels)
 
-			print({'INFO'}, f"Adding baking material {mat.name}.")
+			print(f"Adding baking material {mat.name}.")
 			self.bake_sockets.append(bake_material)
 
 
@@ -219,8 +207,8 @@ class MaterialMetadata():
 		self.alpha_node = None
 		self.shader_mix_node = None
 
-		self.output_node = next(n for n in self.material.node_tree.nodes if n.type == 'OUTPUT_MATERIAL')
-		if self.output_node == None:
+		self.output_node = next((n for n in self.material.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
+		if self.output_node is None:
 			raise ValueError(f"Output node not found for material {self.material.name}.")
 		self.proxy_output_pin = self.output_node.inputs['Surface']
 		self.original_shader_output = [l.from_socket for l in self.proxy_output_pin.links]
@@ -278,7 +266,6 @@ class MaterialMetadata():
 				raise ValueError(f"Invalid channel '{ch}' for combine color node. Must be one of {list(bake_utils.CHANNEL_MAP.keys())}.")
 			self.material.node_tree.links.new(output_to_bake, self.combine_node.inputs[input_name])
 
-
 	def cleanup(self):
 		self.proxy_output_pin = self.output_node.inputs['Surface']
 		for fs in self.original_shader_output:
@@ -300,7 +287,7 @@ class MaterialMetadata():
 
 class BakeMaterial():
 	"""
-	Material, das gebaked werden soll. Enthält die referenz auf den Image Node, die UV Map und obe es sich um ein Dummy Material handelt.
+	Material, das gebaked werden soll. Enthält die Referenz auf den Image Node, die UV Map und ob es sich um ein Dummy Material handelt.
 	"""
 	def __init__(self, material, input_socket, uv_map_name, image_node, channels):
 		self.material = material
@@ -317,10 +304,8 @@ class BakeMaterial():
 		self.uv_node = None
 		self.proxy_value_node = None
 
-
 	def is_dummy(self):
 		return self.output_to_bake is None
-
 
 	def prepare(self, metadata: MaterialMetadata):
 		if not self.image_node:
@@ -355,17 +340,14 @@ class BakeMaterial():
 					if self.alpha_to_bake:
 						metadata.connect_single(self.alpha_to_bake, 'A')
 
-
 		if not self.is_dummy():
 			self.image_node.add_uv(self.uv_map_name)
 		self.image_node.select()
-
 
 	def cleanup(self):
 		if self.is_dummy() and self.image_node:
 			self.image_node.remove()
 			return
-
 
 	def cleanup_pass(self):
 		if self.is_dummy():
@@ -379,7 +361,6 @@ class BakeMaterial():
 		if self.proxy_value_node:
 			self.material.node_tree.nodes.remove(self.proxy_value_node)
 
-
 	def rollback(self):
 		'''
 		Setzt den Material zurück auf den ursprünglichen Zustand.
@@ -391,10 +372,9 @@ class BakeMaterial():
 			self.material.node_tree.nodes.remove(self.proxy_value_node)
 			self.proxy_value_node = None
 
-
 	def find_alpha_input(self):
 		alpha_input_name = f"{self.input_socket.name}_Alpha"
-		alpha_socket = self.input_socket.node.inputs[alpha_input_name]
+		alpha_socket = self.input_socket.node.inputs.get(alpha_input_name)
 		if alpha_socket and alpha_socket.is_linked:
 			self.alpha_socket = alpha_socket
 			return alpha_socket.links[0].from_socket
@@ -402,11 +382,10 @@ class BakeMaterial():
 
 
 def get_interface_node(material):
-	"""Finds and returns the main interface node group for a given object if it's valid."""
+	"""Gibt den Interface-Node zurück, an den der Surface-Output verbunden ist, oder None."""
 	if not material.use_nodes:
 		return None
 	output_node = next((n for n in material.node_tree.nodes if n.type == 'OUTPUT_MATERIAL'), None)
 	if not (output_node and output_node.inputs['Surface'].links):
 		return None
-	interface_node = output_node.inputs['Surface'].links[0].from_node
-	return interface_node # if interface_node.type == 'GROUP' else None
+	return output_node.inputs['Surface'].links[0].from_node
