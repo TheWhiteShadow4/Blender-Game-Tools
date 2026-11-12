@@ -1,6 +1,7 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
 import bpy
+import bmesh
 from mathutils import Vector
 
 class ObjectCleanupTools:
@@ -48,24 +49,27 @@ class ObjectCleanupTools:
     
     @staticmethod
     def dissolve_small_faces(obj, min_area=0.0001):
-        """Dissolves faces with very small area"""
+        """Dissolves faces with very small area (below min_area)"""
         if obj.type != 'MESH':
             return False, "Object is not a mesh"
         
-        # Enter Edit Mode
-        bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.mode_set(mode='EDIT')
+        # Use BMesh to find and remove faces below the area threshold
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
         
-        # Select all faces
-        bpy.ops.mesh.select_all(action='SELECT')
+        faces_to_remove = [f for f in bm.faces if f.calc_area() < min_area]
         
-        # Dissolve faces with small area
-        bpy.ops.mesh.dissolve_faces()
+        if not faces_to_remove:
+            bm.free()
+            return True, "No faces to dissolve (all above area threshold)"
         
-        # Return to Object Mode
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bmesh.ops.delete(bm, geom=faces_to_remove, context='FACES')
         
-        return True, f"Faces with area < {min_area} dissolved"
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+        
+        return True, f"{len(faces_to_remove)} faces with area < {min_area} dissolved"
     
     @staticmethod
     def clean_vertex_group_weights(obj, threshold=0.001):
