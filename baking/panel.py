@@ -1,8 +1,8 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
 import bpy
-from .. import baker
-from .. import bake_utils
+from . import baker
+from . import bake_utils
 
 
 def get_bakeable_sockets(self, context):

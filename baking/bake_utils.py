@@ -1,7 +1,7 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
 import bpy
-from . import constants
+from .. import constants
 
 class AlphaMergePlan():
 	"""

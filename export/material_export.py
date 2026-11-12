@@ -5,7 +5,7 @@
 import os
 import json
 import shutil
-from . import constants
+from .. import constants
 
 
 def correct_color(color, apply_gamma):

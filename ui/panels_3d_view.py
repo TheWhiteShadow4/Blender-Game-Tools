@@ -1,7 +1,7 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
 import bpy
-from .. import object_cleanups
+from ..cleanup import object_cleanups
 
 # ===== UI TEXT CONSTANTS =====
 # Main Panel

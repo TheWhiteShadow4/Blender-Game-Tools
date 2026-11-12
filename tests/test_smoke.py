@@ -43,27 +43,36 @@ def check(label, condition):
 
 print("\n=== 1. Addon laden ===")
 
-try:
-    # Importiere das Addon direkt – der Modulname ist der Verzeichnisname
-    # 'Blender-Game-Tools' ist kein gültiger Python-Modulname,
-    # daher nutzen wir importlib mit dem Pfad.
-    import importlib.util
+addon_loaded = False
 
-    addon_init = addon_dir / "__init__.py"
-    spec = importlib.util.spec_from_file_location("tws_game_tools", str(addon_init))
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["tws_game_tools"] = module
-    spec.loader.exec_module(module)
-    # __init__.py ruft register() nur bei __name__ == "__main__" auf,
-    # das ist hier nicht der Fall – daher explizit aufrufen.
-    module.register()
-    print("  [OK ] Addon 'tws_game_tools' erfolgreich geladen und registriert.")
+# Prüfen ob das Addon bereits aus dem Blender-Profil installiert ist
+import addon_utils
+existing = addon_utils.check("tws_game_tools")
+if existing:
+    print("  [OK ] Addon 'tws_game_tools' ist bereits installiert – nutze vorhandene Installation.")
     addon_loaded = True
-except Exception as e:
-    import traceback
-    print(f"  [FAIL] Addon konnte nicht geladen werden: {e}")
-    traceback.print_exc()
-    addon_loaded = False
+else:
+    try:
+        # Importiere das Addon direkt – der Modulname ist der Verzeichnisname
+        # 'Blender-Game-Tools' ist kein gültiger Python-Modulname,
+        # daher nutzen wir importlib mit dem Pfad.
+        import importlib.util
+
+        addon_init = addon_dir / "__init__.py"
+        spec = importlib.util.spec_from_file_location("tws_game_tools", str(addon_init))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["tws_game_tools"] = module
+        spec.loader.exec_module(module)
+        # __init__.py ruft register() nur bei __name__ == "__main__" auf,
+        # das ist hier nicht der Fall – daher explizit aufrufen.
+        module.register()
+        print("  [OK ] Addon 'tws_game_tools' erfolgreich geladen und registriert.")
+        addon_loaded = True
+    except Exception as e:
+        import traceback
+        print(f"  [FAIL] Addon konnte nicht geladen werden: {e}")
+        traceback.print_exc()
+        addon_loaded = False
 
 check("Addon 'tws_game_tools' ist geladen", addon_loaded)
 

@@ -91,14 +91,14 @@ def main():
     # Lösung: bake_batch.execute() aufrufen (baut bake_data auf und
     # speichert es in der Class-Variable), dann direkt den Baker
     # aufrufen.
-    from tws_game_tools import baker as baker_module
-    from tws_game_tools import bake_utils
+    from tws_game_tools.baking import baker as baker_module
+    from tws_game_tools.baking import bake_utils
 
     # bake_batch.execute() aufrufen – das baut die BakeData auf
     # und speichert sie in UNITY_OT_bake_batch.bake_data_to_confirm
     # Am Ende versucht es INVOKE_DEFAULT, was im Background fehlschlägt,
     # aber die bake_data_to_confirm ist bereits gesetzt.
-    from tws_game_tools.ui.panel_baking import UNITY_OT_bake_batch
+    from tws_game_tools.baking.panel import UNITY_OT_bake_batch
     try:
         result = bpy.ops.unity.bake_batch()
         print(f"  bake_batch Result: {result}")

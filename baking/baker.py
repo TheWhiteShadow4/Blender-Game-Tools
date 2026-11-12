@@ -2,7 +2,7 @@
 # pyright: reportMissingImports=false
 import traceback
 from . import bake_utils
-from . import constants
+from .. import constants
 from . import alpha_combiner
 import bpy
 

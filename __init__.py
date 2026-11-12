@@ -5,8 +5,9 @@ import ast
 import os
 
 import bpy
-from . import constants, exceptions, validation, properties, operators, baker, bake_utils, alpha_combiner, cloth_rigger, cleanup_operators, rotation_fix_settings, material_export, hair_particle_converter
-from .ui import panels_3d_view, panel_baking, panel_uv_editor
+from . import constants, exceptions, validation, properties
+from . import export, merge, rigging, cleanup, baking
+from .ui import panels_3d_view, panel_uv_editor
 
 
 def load_addon_version():
@@ -59,19 +60,14 @@ if "bpy" in locals():
     importlib.reload(constants)
     importlib.reload(exceptions)
     importlib.reload(validation)
-    importlib.reload(material_export)
-    importlib.reload(hair_particle_converter)
     importlib.reload(properties)
-    importlib.reload(operators)
+    importlib.reload(export)
+    importlib.reload(merge)
+    importlib.reload(rigging)
+    importlib.reload(cleanup)
+    importlib.reload(baking)
     importlib.reload(panels_3d_view)
-    importlib.reload(panel_baking)
     importlib.reload(panel_uv_editor)
-    importlib.reload(baker)
-    importlib.reload(bake_utils)
-    importlib.reload(alpha_combiner)
-    importlib.reload(cloth_rigger)
-    importlib.reload(cleanup_operators)
-    importlib.reload(rotation_fix_settings)
 
 def validate_and_refresh_ui():
     """
@@ -98,12 +94,13 @@ def on_load_handler(dummy):
 
 def register():
 	properties.register()
-	operators.register()
+	export.register()
+	merge.register()
+	rigging.register()
+	cleanup.register()
+	baking.register()
 	panels_3d_view.register()
-	panel_baking.register()
 	panel_uv_editor.register()
-	cloth_rigger.register()
-	cleanup_operators.register()
 	
 	bpy.app.handlers.load_post.append(on_load_handler)
 	
@@ -114,13 +111,14 @@ def register():
 
 
 def unregister():
-	panel_baking.unregister()
 	panel_uv_editor.unregister()
 	panels_3d_view.unregister()
-	operators.unregister()
+	baking.unregister()
+	cleanup.unregister()
+	rigging.unregister()
+	merge.unregister()
+	export.unregister()
 	properties.unregister()
-	cloth_rigger.unregister()
-	cleanup_operators.unregister()
 	
 	if on_load_handler in bpy.app.handlers.load_post:
 		bpy.app.handlers.load_post.remove(on_load_handler)
