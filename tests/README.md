@@ -29,6 +29,7 @@ blender --background --python tests/test_export_json.py
 | **Smoke-Test** | `test_smoke.py` | Addon-Laden, 6 Panels, 2 PropertyGroups, Unity-Mock, Engine-Erkennung, Property-Defaults |
 | **JSON-Export** | `test_export_json.py` | Quick-Export mit `Shaders.blend`, JSON-Struktur, Golden-File-Abgleich |
 | **Bake-Test** | `test_bake.py` | Baking-Feature mit `Test.blend` (Preset-Erkennung, Batch-Bake, Bild-Ausgabe) |
+| **Dissolve-Test** | `test_dissolve_small_faces.py` | `dissolve_small_faces` entfernt tatsächlich kleine Faces (BMesh-basiert) |
 
 ## Golden-File-Workflow
 
@@ -73,6 +74,7 @@ tests/
 ├── test_smoke.py              # Smoke-Test (17 Assertions)
 ├── test_export_json.py        # JSON-Export-Test (16 Assertions)
 ├── test_bake.py               # Bake-Test (Preset-Erkennung, Batch-Bake, Bild-Ausgabe)
+├── test_dissolve_small_faces.py  # Dissolve-Test (BMesh: kleine Faces entfernt)
 ├── Test.blend                 # Bake-Test-Setup (2 Texturen: ColorMap, Smoothness)
 ├── ColorMap.png               # Eingabetextur für den Bake-Test
 ├── Smoothness.png             # Eingabetextur für den Bake-Test
