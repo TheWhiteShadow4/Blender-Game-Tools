@@ -1,19 +1,57 @@
 # Copyright (c) 2026 TheWhiteShadow
 
 # pyright: reportMissingImports=false
+import ast
+import os
+
 import bpy
 from . import constants, exceptions, validation, properties, operators, baker, bake_utils, alpha_combiner, cloth_rigger, cleanup_operators, rotation_fix_settings, material_export, hair_particle_converter
 from .ui import panels_3d_view, panel_baking, panel_uv_editor
 
+
+def load_addon_version():
+    """
+    Liest die Versionsnummer aus blender_manifest.toml (z. B. "1.4.0")
+    und liefert sie als (major, minor) Tuple für bl_info.
+
+    blender_manifest.toml ist die einzige Versionsquelle:
+      - Das Extension-System nutzt sie direkt (blender_manifest.toml:version)
+      - Dieses Addon liest sie hier für die klassische Addon-API (bl_info)
+
+    Wenn die Datei nicht existiert oder nicht parsbar ist, wird (1, 0)
+    als Fallback verwendet, damit das Addon trotzdem lädt.
+    """
+    manifest_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "blender_manifest.toml")
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("version"):
+                    # Zeile hat die Form: version = "1.4.0"
+                    # Wir parsen das Literal rechts von "=" als Python-Literal,
+                    # weil TOML-Strings hier mit doppelten Anführungszeichen
+                    # angegeben sind und so gleichzeitig valide Python-Strings.
+                    value = line.split("=", 1)[1].strip()
+                    version_str = ast.literal_eval(value)
+                    parts = version_str.split(".")
+                    major = int(parts[0])
+                    minor = int(parts[1]) if len(parts) > 1 else 0
+                    return (major, minor)
+    except (OSError, ValueError, IndexError, SyntaxError):
+        pass
+    return (1, 0)
+
+
 bl_info = {
-	"name": "Game Tools",
-	"author": "TheWhiteShadow",
-	"version": (1, 4),
-	"blender": (5, 2, 0),
-	"description": "Game Helper Tools",
-	"warning": "",
-	"wiki_url": "",
-	"category": "System"
+    "name": "Game Tools",
+    "author": "TheWhiteShadow",
+    "version": load_addon_version(),
+    "blender": (5, 2, 0),
+    "description": "Game Helper Tools",
+    "warning": "",
+    "wiki_url": "",
+    "category": "System"
 }
 
 if "bpy" in locals():
