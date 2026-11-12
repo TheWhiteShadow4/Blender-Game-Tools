@@ -4,28 +4,22 @@ import bpy
 import os
 import re
 
+from .validation import validate_unity_project, validate_godot_project
+
+
 def detect_game_engine(path):
-	"""Gibt 'UNITY', 'GODOT' oder None zurück."""
-	if is_valid_unity_project(path):
-		return 'UNITY'
-	if is_valid_godot_project(path):
-		return 'GODOT'
-	return None
-
-def is_valid_unity_project(path):
-    if not path or not os.path.isdir(path):
-        return False
-    
-    assets_path = os.path.join(path, "Assets")
-    project_settings_path = os.path.join(path, "ProjectSettings")
-
-    return os.path.isdir(assets_path) and os.path.isdir(project_settings_path)
-
-def is_valid_godot_project(path):
-	"""Einfache Heuristik: Eine Godot-Projectdatei liegt im Root."""
-	if not path or not os.path.isdir(path):
-		return False
-	return os.path.isfile(os.path.join(path, "project.godot"))
+    """Gibt 'UNITY', 'GODOT' oder None zurück."""
+    try:
+        validate_unity_project(path)
+        return 'UNITY'
+    except Exception:
+        pass
+    try:
+        validate_godot_project(path)
+        return 'GODOT'
+    except Exception:
+        pass
+    return None
 
 
 def update_project_path(self, context):
