@@ -16,7 +16,7 @@ GODOT_AXIS_FORWARD = '-Z'
 GODOT_AXIS_UP = 'Y'
 
 # ===== Material Import =====
-# Beim Unity-Import projektweit nach vorhandenen Materialien mit gleichem Namen suchen,
+# Beim Import projektweit nach vorhandenen Materialien mit gleichem Namen suchen,
 # bevor ein neues Material angelegt wird. (Flag wird in die .imp.json geschrieben.)
 SEARCH_PROJECT_MATERIALS = True
 
@@ -24,8 +24,8 @@ SEARCH_PROJECT_MATERIALS = True
 # Der Farbraum (sRGB/Non-Color) wird unabhängig davon immer übertragen.
 TRANSFER_TEXTURE_SETTINGS = True
 
-# Bestehende Texturen in Unity überschreiben (Blender als "Wahrheit") oder
-# manuelle Änderungen in Unity respektieren. (Flag wird in die .imp.json geschrieben.)
+# Bestehende Texturen überschreiben (Blender als "Wahrheit") oder
+# manuelle Änderungen respektieren. (Flag wird in die .imp.json geschrieben.)
 OVERWRITE_TEXTURE_SETTINGS = True
 
 # ===== Tolerances =====

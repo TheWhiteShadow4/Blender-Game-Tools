@@ -708,7 +708,7 @@ class UNITY_OT_add_bake_preset(bpy.types.Operator):
 
 class UNITY_OT_bake_batch(bpy.types.Operator):
 	"""Create baking data for the selected object"""
-	bl_idname = "unity.bake_batch"
+	tbl_idname = "baking.batch"
 	bl_label = "Bake Materials"
 	bl_options = {'REGISTER', 'UNDO'}
 

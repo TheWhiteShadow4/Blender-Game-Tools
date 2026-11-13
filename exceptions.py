@@ -1,10 +1,10 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
-"""Custom Exceptions für Unity Tools Addon."""
+"""Custom Exceptions für das Export-Addon."""
 
 
 class AddonError(Exception):
-	"""Basis-Exception für Unity Tools Addon."""
+	"""Basis-Exception für das Export-Addon."""
 	pass
 
 

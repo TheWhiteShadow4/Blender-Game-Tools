@@ -1,6 +1,6 @@
 # pyright: reportInvalidTypeForm=false
 # pyright: reportMissingImports=false
-"""Validierungs-Funktionen für Unity Tools Addon."""
+"""Validierungs-Funktionen für Game Tools Addon."""
 
 import os
 from .exceptions import ValidationError
@@ -8,7 +8,7 @@ from .exceptions import ValidationError
 
 def validate_unity_project(path: str) -> bool:
 	"""
-	Validiert Unity-Projektpfad.
+	Validiert Game Tools Projektpfad.
 	
 	Prüft auf das Vorhandensein von:
 	- Assets/ Verzeichnis
@@ -18,10 +18,10 @@ def validate_unity_project(path: str) -> bool:
 		path: Zu validierender Projektpfad
 	
 	Returns:
-		True wenn gültiges Unity-Projekt
+		True wenn gültiges Game Tools-Projekt
 	
 	Raises:
-		ValidationError: Wenn Pfad ungültig oder keine Unity-Struktur
+		ValidationError: Wenn Pfad ungültig oder keine Game Tools-Struktur
 	"""
 	if not path:
 		raise ValidationError("Projektpfad ist leer")
@@ -32,7 +32,7 @@ def validate_unity_project(path: str) -> bool:
 	if not os.path.isdir(path):
 		raise ValidationError(f"Pfad ist kein Verzeichnis: {path}")
 	
-	# Unity-Struktur prüfen
+	# Game Tools-Struktur prüfen
 	assets_path = os.path.join(path, "Assets")
 	settings_path = os.path.join(path, "ProjectSettings")
 	

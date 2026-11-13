@@ -12,7 +12,7 @@ from . import material_export
 
 class UNITY_OT_quick_export(bpy.types.Operator):
     """Quick export selected object to Unity project"""
-    bl_idname = "unity.quick_export"
+    bl_idname = "export.quick_export"
     bl_label = "Quick Export"
     bl_options = {'REGISTER', 'UNDO'}
 

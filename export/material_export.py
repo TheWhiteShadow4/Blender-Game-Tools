@@ -12,7 +12,7 @@ def correct_color(color, apply_gamma):
 	"""Applies gamma correction to a color if the flag is set."""
 	if not apply_gamma:
 		return list(color)
-	# Convert Linear to sRGB color space for Unity.
+	# Convert Linear to sRGB color space.
 	return [
 		pow(color[0], 1.0/constants.GAMMA_CORRECTION_FACTOR),
 		pow(color[1], 1.0/constants.GAMMA_CORRECTION_FACTOR),
@@ -158,7 +158,7 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache, te
 		if from_node.type == 'TEX_IMAGE':
 			# Textures are the only reliable signal for a texture property. Even if
 			# the name follows the color convention, a connected Image Texture still
-			# represents a texture; the Unity importer resolves the actual shader
+			# represents a texture; the importer resolves the actual shader
 			# property type and will warn if there is a mismatch.
 			if is_color_name:
 				operator.report({'WARNING'}, f"Input '{prop_name}' follows color convention but is connected to a texture.")
@@ -215,7 +215,7 @@ def process_socket(socket, unity_props, export_path, operator, texture_cache, te
 	else:
 		if is_texture_name:
 			# A texture property without a connected texture should stay unassigned in
-			# Unity. Exporting a color here would make Unity try to set a color on a
+			# Exporting a color here would make the importer try to set a color on a
 			# texture property, which logs an error.
 			return None
 
@@ -268,7 +268,7 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 			# Export minimal material data so Unity can try to find it by name
 			materials_data.append({
 				"materialName": mat.name,
-				"shaderName": None,  # Unity importer will search for existing material
+				"shaderName": None,  # The importer will search for existing material
 				"properties": []
 			})
 			continue
@@ -287,7 +287,7 @@ def export_materials(context, obj, export_path, fbx_filepath, operator):
 		except Exception as e:
 			operator.report({'WARNING'}, f"Error processing material '{mat.name}': {e}. Material reference exported.")
 
-		# Add material data (even if properties list is empty, so Unity knows the material name)
+		# Add material data (even if properties list is empty, so the importer knows the material name)
 		materials_data.append(material_data)
 
 	# Nothing to export

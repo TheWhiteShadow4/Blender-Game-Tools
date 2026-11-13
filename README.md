@@ -1,4 +1,4 @@
-# Unity Tools – Blender Addon
+# Game Tools – Blender Addon
 
 Professional Blender addon for exporting assets to game engines (Unity/Godot) with automatic material conversion and comprehensive texture baking system.
 
@@ -24,7 +24,7 @@ Collection-based merging with automatic modifier application, hair particle conv
 
 1. Download the Zip
 2. In Blender: `Edit` > `Preferences` > `Add-ons` > `Install...`
-3. Select the ZIP and enable "Unity Tools"
+3. Select the ZIP and enable "Game Tools"
 4. The panel appears in the 3D Viewport under `N` > `Game Tools`
 
 ---
