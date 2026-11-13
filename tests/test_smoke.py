@@ -45,17 +45,16 @@ print("\n=== 1. Addon laden ===")
 
 addon_loaded = False
 
-# Prüfen ob das Addon bereits aus dem Blender-Profil installiert ist
+# Prüfen ob das Addon bereits aus dem Blender-Profil installiert ist.
+# addon_utils.check() ist unzuverlässig bei Symlinks — daher direkt enable() versuchen.
 import addon_utils
-existing = addon_utils.check("tws_game_tools")
-if existing:
-    print("  [OK ] Addon 'tws_game_tools' ist bereits installiert – nutze vorhandene Installation.")
+try:
+    addon_utils.enable("tws_game_tools", default_set=True)
+    print("  [OK ] Addon 'tws_game_tools' ist installiert und aktiviert.")
     addon_loaded = True
-else:
+except Exception:
     try:
-        # Importiere das Addon direkt – der Modulname ist der Verzeichnisname
-        # 'Blender-Game-Tools' ist kein gültiger Python-Modulname,
-        # daher nutzen wir importlib mit dem Pfad.
+        # Fallback: Addon direkt per sys.path importieren
         import importlib.util
 
         addon_init = addon_dir / "__init__.py"
@@ -63,10 +62,8 @@ else:
         module = importlib.util.module_from_spec(spec)
         sys.modules["tws_game_tools"] = module
         spec.loader.exec_module(module)
-        # __init__.py ruft register() nur bei __name__ == "__main__" auf,
-        # das ist hier nicht der Fall – daher explizit aufrufen.
         module.register()
-        print("  [OK ] Addon 'tws_game_tools' erfolgreich geladen und registriert.")
+        print("  [OK ] Addon 'tws_game_tools' erfolgreich geladen und registriert (Fallback).")
         addon_loaded = True
     except Exception as e:
         import traceback

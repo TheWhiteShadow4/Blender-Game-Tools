@@ -5,6 +5,8 @@
 import bpy
 from . import hair_particle_converter
 
+_collections_enum_cache = None
+
 
 class UNITY_OT_merge_objects(bpy.types.Operator):
     """Merge objects from selected collection"""
@@ -61,24 +63,32 @@ class UNITY_OT_merge_objects(bpy.types.Operator):
         active_obj = context.active_object
         if not active_obj:
             return [('NONE', "No active object", "")]
-        collections = []
+        global _collections_enum_cache
+        # Cache die Liste, um den bekannten Blender-Bug mit dynamischen EnumProperty zu umgehen
+        # (Blender benötigt eine persistente Referenz auf die Item-Strings)
+        if _collections_enum_cache is None:
+            _collections_enum_cache = []
         collection_index = 0
         for collection in bpy.data.collections:
             try:
                 if active_obj.name in collection.objects:
                     safe_id = f"COLLECTION_{collection_index}"
-                    collections.append((safe_id, collection.name, f"Merge objects from {collection.name}"))
+                    # Escape Umlaute für korrekte UI-Darstellung
+                    display_name = collection.name.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+                    _collections_enum_cache.append((safe_id, display_name, f"Merge objects from {display_name}"))
                     collection_index += 1
             except (UnicodeError, KeyError):
                 for obj in collection.objects:
                     if obj == active_obj:
                         safe_id = f"COLLECTION_{collection_index}"
-                        collections.append((safe_id, collection.name, f"Merge objects from {collection.name}"))
+                        # Escape Umlaute für korrekte UI-Darstellung
+                        display_name = collection.name.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+                        _collections_enum_cache.append((safe_id, display_name, f"Merge objects from {display_name}"))
                         collection_index += 1
                         break
-        if not collections:
+        if not _collections_enum_cache:
             return [('NONE', "No collections found", "")]
-        return collections
+        return _collections_enum_cache
 
     selected_collection: bpy.props.EnumProperty(
         name="Select Collection",

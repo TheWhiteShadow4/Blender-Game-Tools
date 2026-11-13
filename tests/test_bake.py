@@ -30,12 +30,15 @@ def check(condition, msg):
 def main():
     global failures
 
-    # --- Addon ist installiert – nur noch prüfen ---
+    # --- Addon aktivieren und prüfen ---
     print("=" * 60)
     print("  BAKE TEST – Material-Baking auf Test.blend")
     print("=" * 60)
 
-    check(hasattr(bpy.types.Object, "unity_bake_settings"), "Addon ist installiert")
+    import addon_utils
+    addon_utils.enable("tws_game_tools", default_set=True)
+    check(hasattr(bpy.ops, "unity_bake") and hasattr(bpy.ops.unity_bake, "batch"),
+          "Addon ist aktiviert (bpy.ops.unity_bake.batch verfügbar)")
     if failures > 0:
         print(f"\n{failures} Test(s) FEHLGESCHLAGEN")
         sys.exit(1)
@@ -100,7 +103,7 @@ def main():
     # aber die bake_data_to_confirm ist bereits gesetzt.
     from tws_game_tools.baking.panel import UNITY_OT_bake_batch
     try:
-        result = bpy.ops.unity.bake_batch()
+        result = bpy.ops.unity_bake.batch()
         print(f"  bake_batch Result: {result}")
     except RuntimeError:
         # INVOKE_DEFAULT schlägt im Background fehl – das ist OK

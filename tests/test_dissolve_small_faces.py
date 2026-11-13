@@ -12,8 +12,13 @@ def test_dissolve_small_faces():
     print("=" * 60)
 
     # Addon muss geladen sein
+    import addon_utils
+    try:
+        addon_utils.enable("tws_game_tools", default_set=True)
+    except Exception:
+        pass
     if not hasattr(bpy.context.scene, "unity_tool_properties"):
-        print("  [FAIL] Addon nicht installiert – kein Test m\xf6glich")
+        print("  [FAIL] Addon nicht installiert – kein Test möglich")
         return False
 
     # Mesh anlegen: 1 grosses Rechteck (1x1) + 1 winziges Dreieck (0.001x0.001)
